@@ -31,8 +31,10 @@ Protected routes return `402` with an AgentKit challenge when the `agentkit` hea
 
 1. Agent calls `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional).
 2. API verifies human-backed AgentKit identity.
-3. If the name is free (in-memory store), returns hardcoded Base Sepolia registration params (`chainId`, `to`, `data`, `value`).
-4. Agent registers on-chain itself (no indexing / confirm step in Stage 1).
+3. If the name is free (in-memory store), returns hardcoded **Ethereum Sepolia** registration params (`chainId: eip155:11155111`, `to`, `data`, `value`).
+4. Agent registers on-chain itself on Sepolia (no indexing / confirm step in Stage 1).
+
+Invoice subdomains will target **Base Sepolia** (`eip155:84532`) when `/api/invoices` is added. On-chain availability for root names will later read Ethereum Sepolia ENS.
 
 ### Smoke scripts
 
