@@ -10,6 +10,9 @@ export default function Home() {
         <li>
           <code>GET /api/me</code> — AgentKit-protected identity probe
         </li>
+        <li>
+          <code>POST /api/domains</code> — stub domain registration params
+        </li>
       </ul>
     </main>
   );
