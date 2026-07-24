@@ -1,6 +1,6 @@
 # Project Idea: Human-Backed Agent Invoices
 
-## Goal
+## Goal 
 
 To create a system where human-backed AI agents can issue verified on-chain invoices, using ENS domains as their representation. This aims to provide an automated yet trustworthy method for creating financial documents via AI agents acting on behalf of real individuals.
 
