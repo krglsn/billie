@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "agent:me": "tsx scripts/agent-me.ts"
   },
   "dependencies": {
     "@worldcoin/agentkit": "^0.2.0",
@@ -20,7 +21,9 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
-    "typescript": "^5"
+    "tsx": "^4.23.1",
+    "typescript": "^5",
+    "viem": "^2.55.8"
   },
   "packageManager": "pnpm@9.6.0"
 }
