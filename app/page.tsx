@@ -7,6 +7,9 @@ export default function Home() {
         <li>
           <code>GET /api/health</code> — public health check
         </li>
+        <li>
+          <code>GET /api/me</code> — AgentKit-protected identity probe
+        </li>
       </ul>
     </main>
   );

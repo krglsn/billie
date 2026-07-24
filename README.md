@@ -20,5 +20,10 @@ pnpm dev
 | Method | Path | Auth |
 |--------|------|------|
 | `GET` | `/api/health` | public |
+| `GET` | `/api/me` | AgentKit (human-backed) |
+
+Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Use `createAgentkitClient(...).fetch` from `@worldcoin/agentkit` as the agent HTTP client.
+
+Optional env vars: see [`.env.example`](./.env.example).
 
 See [PLAN.md](./PLAN.md) for scope and follow-ups.
