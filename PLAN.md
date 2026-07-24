@@ -20,7 +20,7 @@ Deferred pieces stay in the picture; only the API slice ships now.
 - **Stack:** Next.js (App Router) TypeScript — API routes only for now (no UI pages beyond a minimal health check if useful).
 - **Auth:** World AgentKit (`@worldcoin/agentkit`) — CAIP-122 challenge + AgentBook lookup on World Chain. Prefer `free` (or high `free-trial`) mode so local testing does not require x402 payment.
 - **On-chain:** root domains → **Ethereum Sepolia**; invoice subdomains → **Base Sepolia**. No contract design or deployment in this stage — endpoints return stub / in-memory records. Domain availability is in-memory for now; later it will read Ethereum Sepolia ENS.
-- **Client for smoke test:** small script using `createAgentkitClient` + `agentkit.fetch` against `localhost`.
+- **Client for smoke test:** `pnpm agent:me` / `pnpm agent:domain` using `createAgentkitClient` + `agentkit.fetch` against `http://127.0.0.1:3000`.
 
 ## Stage 1 scope
 
@@ -39,20 +39,23 @@ Deferred pieces stay in the picture; only the API slice ships now.
 
 Both return clear JSON success/error. Unauthenticated or non–human-backed requests get the AgentKit/x402 challenge (402) and fail verify without a registered AgentBook wallet.
 
-### 3. Local smoke test
+### 3. Local smoke test (Stage 1 checkpoint)
 
-1. Start API (`npm run dev`).
-2. Register agent wallet: `npx @worldcoin/agentkit-cli register <agent-address>` (World App verification).
-3. Run a small client script with `agentkit.fetch` against both endpoints.
-4. Confirm: unregistered wallet fails; registered human-backed agent succeeds on domain create then invoice create.
+Full checklist: [README.md](./README.md#stage-1-verification-checklist).
 
-Document this flow in README (env vars, register, curl/script examples).
+1. Start API: `pnpm dev --hostname 127.0.0.1 --port 3000`
+2. Register agent: `npx @worldcoin/agentkit-cli register <address>`
+3. `pnpm agent:me` and `pnpm agent:domain -- <name>`
+4. Confirm: unauthenticated → 402; registered agent → `/api/me` + `/api/domains` succeed; duplicate domain → 409
+
+`/api/invoices` is deferred past this checkpoint.
 
 ## Todos
 
-1. Scaffold local API (Next.js API routes) with AgentKit human-backed verification
-2. Add `POST /api/domains` and `POST /api/invoices` stubs behind AgentKit auth
-3. Document + verify local flow — register agent via AgentKit CLI, call both endpoints
+1. ~~Scaffold local API (Next.js API routes) with AgentKit human-backed verification~~
+2. ~~Add `POST /api/domains` stub behind AgentKit auth~~ (`/api/invoices` still pending)
+3. ~~Document + verify local flow — register agent via AgentKit CLI, call `/api/me` and `/api/domains`~~
+4. Add `POST /api/invoices` stub behind AgentKit auth (Base Sepolia)
 
 ## Out of scope (this stage)
 
