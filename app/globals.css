@@ -27,6 +27,33 @@ code,
   margin-top: 0;
 }
 
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.page-header h1 {
+  margin-bottom: 0.35rem;
+}
+
+.button-secondary {
+  font: inherit;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  border: 1px solid #bbb;
+  background: #fff;
+  color: #111;
+  flex-shrink: 0;
+}
+
+.button-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .field {
   display: flex;
   flex-direction: column;

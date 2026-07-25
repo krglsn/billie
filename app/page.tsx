@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Spinner } from "@/app/components/Spinner";
 
 type Agent = {
@@ -27,38 +27,15 @@ export default function Home() {
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const agentRef = useRef(agent);
+  const domainRef = useRef(domain);
+  agentRef.current = agent;
+  domainRef.current = domain;
+
   const domains = useMemo(() => {
     const selected = agents.find((a) => a.agentAddress === agent);
     return selected?.domains ?? [];
   }, [agents, agent]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoadingAgents(true);
-      setError(null);
-      try {
-        const res = await fetch("/api/agents");
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error ?? "Failed to load agents");
-        if (!cancelled) setAgents(body.agents ?? []);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load agents");
-        }
-      } finally {
-        if (!cancelled) setLoadingAgents(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    setDomain("");
-    setInvoices([]);
-  }, [agent]);
 
   const loadInvoices = useCallback(
     async (agentAddress: string, domainName: string) => {
@@ -87,25 +64,102 @@ export default function Home() {
     [],
   );
 
+  const loadAgents = useCallback(async () => {
+    setLoadingAgents(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/agents");
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Failed to load agents");
+      const nextAgents = (body.agents ?? []) as Agent[];
+      setAgents(nextAgents);
+
+      const prevAgent = agentRef.current;
+      const prevDomain = domainRef.current;
+      const match = nextAgents.find((a) => a.agentAddress === prevAgent);
+      if (!match) {
+        setAgent("");
+        setDomain("");
+        return { agent: "", domain: "" };
+      }
+      const domainOk = match.domains.includes(prevDomain);
+      if (!domainOk) {
+        setDomain("");
+        return { agent: prevAgent, domain: "" };
+      }
+      return { agent: prevAgent, domain: prevDomain };
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load agents");
+      return {
+        agent: agentRef.current,
+        domain: domainRef.current,
+      };
+    } finally {
+      setLoadingAgents(false);
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    const selection = await loadAgents();
+    if (selection.agent && selection.domain) {
+      await loadInvoices(selection.agent, selection.domain);
+    } else {
+      setInvoices([]);
+    }
+  }, [loadAgents, loadInvoices]);
+
+  useEffect(() => {
+    void loadAgents();
+  }, [loadAgents]);
+
   useEffect(() => {
     void loadInvoices(agent, domain);
   }, [agent, domain, loadInvoices]);
 
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [refreshAll]);
+
   return (
     <main className="page">
-      <h1>Billie</h1>
-      <p className="lede">Pay invoices issued by human-backed agents.</p>
+      <div className="page-header">
+        <div>
+          <h1>Billie</h1>
+          <p className="lede">Pay invoices issued by human-backed agents.</p>
+        </div>
+        <button
+          type="button"
+          className="button-secondary"
+          onClick={() => void refreshAll()}
+          disabled={loadingAgents || loadingInvoices}
+        >
+          {loadingAgents ? <Spinner label="Refreshing…" /> : "Refresh"}
+        </button>
+      </div>
 
       <label className="field">
         <span>Agent</span>
-        {loadingAgents ? (
+        {loadingAgents && agents.length === 0 ? (
           <Spinner label="Loading agents…" />
         ) : agents.length === 0 ? (
           <p className="muted">No agents found in database.</p>
         ) : (
           <select
             value={agent}
-            onChange={(e) => setAgent(e.target.value)}
+            onChange={(e) => {
+              setAgent(e.target.value);
+              setDomain("");
+            }}
           >
             <option value="">Select agent…</option>
             {agents.map((a) => (
