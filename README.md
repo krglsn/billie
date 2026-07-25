@@ -139,7 +139,6 @@ pnpm dev --hostname 127.0.0.1 --port 3000
 | `AGENT_PRIVATE_KEY` | yes | Agent wallet (register in AgentBook first) |
 | `BILLIE_API_URL` | if remote | Billie base URL. Default `http://127.0.0.1:3000`. Point at your Vercel URL when not using local `pnpm dev` |
 | `BILLIE_SUBMIT_INVOICE` | for broadcast | Set to `1` so `pnpm agent:invoice` also POSTs `/api/invoices/submit` |
-| `AGENT_CHAIN_ID` | optional | AgentKit signing chain. Default `eip155:8453` (Base) |
 
 1. Set `AGENT_PRIVATE_KEY` in `.env`.
 2. Register the agent in World AgentBook (confirm with your World ID):
