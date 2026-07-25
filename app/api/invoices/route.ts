@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAddress } from "viem";
 import {
   isNextResponse,
   requireHumanBackedAgent,
@@ -6,18 +7,28 @@ import {
 import { checkBillieParentStatus } from "@/lib/billie-parent";
 import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
 import {
+  formatAtomicAmount,
+  readErc20TokenMeta,
+  type Erc20TokenMeta,
+} from "@/lib/erc20";
+import { INVOICE_TEXT_KEYS } from "@/lib/invoice-texts";
+import {
   InvoicePrepareError,
   buildInvoiceRegisterTx,
 } from "@/lib/invoice-tx";
 import {
   createInvoiceId,
   getInvoiceByFullName,
+  listInvoicesByAgent,
   normalizeInvoiceLabel,
   savePreparedInvoice,
 } from "@/lib/invoices";
 import {
+  computePaymentStatus,
+  invoiceNode,
   normalizeAtomicAmount,
   normalizeEvmAddress,
+  readRouterPaid,
 } from "@/lib/payment-router";
 
 type PrepareInvoiceBody = {
@@ -28,6 +39,95 @@ type PrepareInvoiceBody = {
   paymentAddress?: unknown;
   domain?: unknown;
 };
+
+/**
+ * Public: list invoices for an agent (in-memory store).
+ *
+ * GET /api/invoices?agent=0x…&domain=alice.parent.eth
+ */
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const agent = url.searchParams.get("agent")?.trim();
+  if (!agent || !isAddress(agent)) {
+    return NextResponse.json(
+      { error: "Missing or invalid query param: agent (0x address)" },
+      { status: 400 },
+    );
+  }
+
+  const domainRaw = url.searchParams.get("domain")?.trim();
+  let domain: string | undefined;
+  if (domainRaw) {
+    try {
+      domain = normalizeDomainName(domainRaw);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: "Invalid query param: domain",
+          detail: error instanceof Error ? error.message : "Unknown error",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  let records = listInvoicesByAgent(agent);
+  if (domain) {
+    records = records.filter(
+      (inv) => inv.rootDomain.toLowerCase() === domain.toLowerCase(),
+    );
+  }
+
+  const tokenMetaCache = new Map<string, Erc20TokenMeta | null>();
+
+  const invoices = await Promise.all(
+    records.map(async (inv) => {
+      const ensStatus = inv.texts[INVOICE_TEXT_KEYS.status] ?? "open";
+      let paidOnRouter: boolean | null = null;
+      if (inv.status === "confirmed" && inv.textsWritten) {
+        try {
+          paidOnRouter = await readRouterPaid(invoiceNode(inv.fullName));
+        } catch {
+          paidOnRouter = null;
+        }
+      }
+
+      const tokenKey = inv.token.toLowerCase();
+      let tokenMeta = tokenMetaCache.get(tokenKey);
+      if (tokenMeta === undefined) {
+        tokenMeta = await readErc20TokenMeta(inv.token);
+        tokenMetaCache.set(tokenKey, tokenMeta);
+      }
+
+      const amountDisplay = tokenMeta
+        ? formatAtomicAmount(inv.amount, tokenMeta.decimals)
+        : null;
+      const amountLabel =
+        amountDisplay && tokenMeta?.symbol
+          ? `${amountDisplay} ${tokenMeta.symbol}`
+          : (amountDisplay ?? inv.amount);
+
+      return {
+        fullName: inv.fullName,
+        agentAddress: inv.agentAddress,
+        humanId: inv.humanId,
+        rootDomain: inv.rootDomain,
+        amount: inv.amount,
+        amountDisplay,
+        amountLabel,
+        paymentStatus: computePaymentStatus({ paidOnRouter, ensStatus }),
+        registrationStatus: inv.status,
+      };
+    }),
+  );
+
+  return NextResponse.json({
+    ok: true,
+    agent: agent.toLowerCase(),
+    domain: domain ?? null,
+    invoices,
+  });
+}
 
 /**
  * Prepare an invoice subdomain registration under the agent's namespace.

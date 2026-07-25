@@ -1,14 +1,30 @@
-* {
-  box-sizing: border-box;
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+
+  --color-ink: #0f172a;
+  --color-muted: #64748b;
+  --color-line: #e2e8f0;
+  --color-surface: #ffffff;
+  --color-canvas: #f1f5f9;
+  --color-accent: #0f766e;
+  --color-accent-hover: #0d9488;
+  --color-danger: #b91c1c;
+  --color-ok: #15803d;
 }
 
-body {
-  margin: 0;
-  color: #111;
-  background: #fafafa;
-}
-
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
+@layer base {
+  body {
+    @apply min-h-screen bg-canvas text-ink antialiased;
+    background-image:
+      radial-gradient(
+        ellipse 80% 50% at 50% -20%,
+        rgb(15 118 110 / 0.08),
+        transparent
+      ),
+      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  }
 }
