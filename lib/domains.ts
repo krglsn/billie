@@ -1,3 +1,5 @@
+import { getDb } from "@/lib/db";
+
 export type LinkedDomain = {
   /** Full ENS name, e.g. `alice.agentinvoice.eth`. */
   name: string;
@@ -17,20 +19,40 @@ export type LinkedDomain = {
   linkedAt: string;
 };
 
-/**
- * In-memory store shaped as:
- *   humanId → agentAddress → domain record
- *
- * Plus indexes for uniqueness / invoice lookups:
- *   - by domain name (global uniqueness)
- *   - by agent address (one linked namespace per agent)
- */
-const byHumanId = new Map<string, Map<string, LinkedDomain>>();
-const byName = new Map<string, LinkedDomain>();
-const byAgentAddress = new Map<string, LinkedDomain>();
+type DomainRow = {
+  name: string;
+  label: string;
+  parent_name: string;
+  agent_address: string;
+  human_id: string;
+  chain_id: string;
+  ens_owner: string;
+  protocol: string;
+  token_id: string;
+  resolver: string;
+  subregistry: string;
+  linked_at: string;
+};
 
 function normalizeAddress(address: string): string {
   return address.toLowerCase();
+}
+
+function rowToDomain(row: DomainRow): LinkedDomain {
+  return {
+    name: row.name,
+    label: row.label,
+    parentName: row.parent_name,
+    agentAddress: row.agent_address,
+    humanId: row.human_id,
+    chainId: row.chain_id as LinkedDomain["chainId"],
+    ensOwner: row.ens_owner,
+    protocol: row.protocol as LinkedDomain["protocol"],
+    tokenId: row.token_id,
+    resolver: row.resolver,
+    subregistry: row.subregistry,
+    linkedAt: row.linked_at,
+  };
 }
 
 const LABEL_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
@@ -118,17 +140,23 @@ export function normalizeDomainName(input: string): string {
 }
 
 export function getLinkedDomain(name: string): LinkedDomain | undefined {
-  return byName.get(name);
+  const row = getDb()
+    .prepare("SELECT * FROM linked_domains WHERE name = ?")
+    .get(name.toLowerCase()) as DomainRow | undefined;
+  return row ? rowToDomain(row) : undefined;
 }
 
 export function isDomainLinked(name: string): boolean {
-  return byName.has(name);
+  return getLinkedDomain(name) !== undefined;
 }
 
 export function getLinkedDomainByAgent(
   agentAddress: string,
 ): LinkedDomain | undefined {
-  return byAgentAddress.get(normalizeAddress(agentAddress));
+  const row = getDb()
+    .prepare("SELECT * FROM linked_domains WHERE agent_address = ?")
+    .get(normalizeAddress(agentAddress)) as DomainRow | undefined;
+  return row ? rowToDomain(row) : undefined;
 }
 
 /**
@@ -160,9 +188,18 @@ export function matchLinkedNamespace(
 }
 
 export function getLinkedDomainsByHuman(humanId: string): LinkedDomain[] {
-  const agents = byHumanId.get(humanId);
-  if (!agents) return [];
-  return [...agents.values()];
+  const rows = getDb()
+    .prepare("SELECT * FROM linked_domains WHERE human_id = ?")
+    .all(humanId) as DomainRow[];
+  return rows.map(rowToDomain);
+}
+
+/** All linked agent namespaces. */
+export function listLinkedDomains(): LinkedDomain[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM linked_domains ORDER BY linked_at ASC")
+    .all() as DomainRow[];
+  return rows.map(rowToDomain);
 }
 
 /**
@@ -173,11 +210,9 @@ export function getHumanAgentDomainMap(): Record<
   Record<string, string>
 > {
   const out: Record<string, Record<string, string>> = {};
-  for (const [humanId, agents] of byHumanId) {
-    out[humanId] = {};
-    for (const [agentAddress, record] of agents) {
-      out[humanId][agentAddress] = record.name;
-    }
+  for (const record of listLinkedDomains()) {
+    if (!out[record.humanId]) out[record.humanId] = {};
+    out[record.humanId]![record.agentAddress] = record.name;
   }
   return out;
 }
@@ -186,29 +221,42 @@ export function linkDomain(
   input: Omit<LinkedDomain, "linkedAt">,
 ): LinkedDomain {
   const agentKey = normalizeAddress(input.agentAddress);
+  const name = input.name.toLowerCase();
 
-  if (byName.has(input.name)) {
+  if (getLinkedDomain(name)) {
     throw new Error("Domain is already registered on Billie");
   }
 
-  if (byAgentAddress.has(agentKey)) {
+  if (getLinkedDomainByAgent(agentKey)) {
     throw new Error("Agent already has a linked domain on Billie");
   }
 
   const record: LinkedDomain = {
     ...input,
+    name,
     agentAddress: agentKey,
     linkedAt: new Date().toISOString(),
   };
 
-  let agents = byHumanId.get(input.humanId);
-  if (!agents) {
-    agents = new Map();
-    byHumanId.set(input.humanId, agents);
+  try {
+    getDb()
+      .prepare(
+        `INSERT INTO linked_domains (
+          name, label, parent_name, agent_address, human_id, chain_id,
+          ens_owner, protocol, token_id, resolver, subregistry, linked_at
+        ) VALUES (
+          @name, @label, @parentName, @agentAddress, @humanId, @chainId,
+          @ensOwner, @protocol, @tokenId, @resolver, @subregistry, @linkedAt
+        )`,
+      )
+      .run(record);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("UNIQUE") || message.includes("unique")) {
+      throw new Error("Domain is already registered on Billie");
+    }
+    throw error;
   }
-  agents.set(agentKey, record);
-  byName.set(input.name, record);
-  byAgentAddress.set(agentKey, record);
 
   return record;
 }

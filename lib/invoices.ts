@@ -1,5 +1,6 @@
 import { randomBytes } from "crypto";
 import type { InvoiceAttestation } from "@/lib/billie-attestation";
+import { getDb } from "@/lib/db";
 import type { LinkedDomain } from "@/lib/domains";
 import type { InvoiceTextRecords } from "@/lib/invoice-texts";
 import type { Hex } from "viem";
@@ -44,11 +45,65 @@ export type InvoiceRecord = {
   errorCode?: string;
 };
 
-const byId = new Map<string, InvoiceRecord>();
-const byFullName = new Map<string, InvoiceRecord>();
+type InvoiceRow = {
+  id: string;
+  label: string;
+  full_name: string;
+  amount: string;
+  currency: string;
+  token: string;
+  payment_address: string;
+  root_domain: string;
+  agent_address: string;
+  human_id: string;
+  status: string;
+  attestation_json: string;
+  texts_json: string;
+  chain_id: string;
+  tx_json: string;
+  stub_calldata: number;
+  created_at: string;
+  updated_at: string;
+  tx_hash: string | null;
+  texts_tx_hash: string | null;
+  texts_written: number | null;
+  texts_error: string | null;
+  error: string | null;
+  error_code: string | null;
+};
 
 function normalizeAddress(address: string): string {
   return address.toLowerCase();
+}
+
+function rowToInvoice(row: InvoiceRow): InvoiceRecord {
+  const record: InvoiceRecord = {
+    id: row.id,
+    label: row.label,
+    fullName: row.full_name,
+    amount: row.amount,
+    currency: row.currency,
+    token: row.token,
+    paymentAddress: row.payment_address,
+    rootDomain: row.root_domain,
+    agentAddress: row.agent_address,
+    humanId: row.human_id,
+    status: row.status as InvoiceStatus,
+    attestation: JSON.parse(row.attestation_json) as InvoiceAttestation,
+    texts: JSON.parse(row.texts_json) as InvoiceTextRecords,
+    chainId: row.chain_id as InvoiceRecord["chainId"],
+    tx: JSON.parse(row.tx_json) as PreparedTxPayload,
+    stubCalldata: row.stub_calldata === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (row.tx_hash) record.txHash = row.tx_hash as `0x${string}`;
+  if (row.texts_tx_hash) record.textsTxHash = row.texts_tx_hash as Hex;
+  if (row.texts_written !== null) record.textsWritten = row.texts_written === 1;
+  if (row.texts_error) record.textsError = row.texts_error;
+  if (row.error) record.error = row.error;
+  if (row.error_code) record.errorCode = row.error_code;
+  return record;
 }
 
 export function normalizeInvoiceLabel(input: string): string {
@@ -72,13 +127,73 @@ export function createInvoiceId(): string {
 }
 
 export function getInvoice(id: string): InvoiceRecord | undefined {
-  return byId.get(id);
+  const row = getDb()
+    .prepare("SELECT * FROM invoices WHERE id = ?")
+    .get(id) as InvoiceRow | undefined;
+  return row ? rowToInvoice(row) : undefined;
 }
 
 export function getInvoiceByFullName(
   fullName: string,
 ): InvoiceRecord | undefined {
-  return byFullName.get(fullName.toLowerCase());
+  const row = getDb()
+    .prepare("SELECT * FROM invoices WHERE full_name = ?")
+    .get(fullName.toLowerCase()) as InvoiceRow | undefined;
+  return row ? rowToInvoice(row) : undefined;
+}
+
+/** Invoices for an agent wallet. */
+export function listInvoicesByAgent(agentAddress: string): InvoiceRecord[] {
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM invoices WHERE agent_address = ? ORDER BY created_at ASC",
+    )
+    .all(normalizeAddress(agentAddress)) as InvoiceRow[];
+  return rows.map(rowToInvoice);
+}
+
+function insertInvoice(record: InvoiceRecord): void {
+  getDb()
+    .prepare(
+      `INSERT INTO invoices (
+        id, label, full_name, amount, currency, token, payment_address,
+        root_domain, agent_address, human_id, status, attestation_json,
+        texts_json, chain_id, tx_json, stub_calldata, created_at, updated_at,
+        tx_hash, texts_tx_hash, texts_written, texts_error, error, error_code
+      ) VALUES (
+        @id, @label, @fullName, @amount, @currency, @token, @paymentAddress,
+        @rootDomain, @agentAddress, @humanId, @status, @attestationJson,
+        @textsJson, @chainId, @txJson, @stubCalldata, @createdAt, @updatedAt,
+        @txHash, @textsTxHash, @textsWritten, @textsError, @error, @errorCode
+      )`,
+    )
+    .run({
+      id: record.id,
+      label: record.label,
+      fullName: record.fullName,
+      amount: record.amount,
+      currency: record.currency,
+      token: record.token,
+      paymentAddress: record.paymentAddress,
+      rootDomain: record.rootDomain,
+      agentAddress: record.agentAddress,
+      humanId: record.humanId,
+      status: record.status,
+      attestationJson: JSON.stringify(record.attestation),
+      textsJson: JSON.stringify(record.texts),
+      chainId: record.chainId,
+      txJson: JSON.stringify(record.tx),
+      stubCalldata: record.stubCalldata ? 1 : 0,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      txHash: record.txHash ?? null,
+      textsTxHash: record.textsTxHash ?? null,
+      textsWritten:
+        record.textsWritten === undefined ? null : record.textsWritten ? 1 : 0,
+      textsError: record.textsError ?? null,
+      error: record.error ?? null,
+      errorCode: record.errorCode ?? null,
+    });
 }
 
 export function savePreparedInvoice(input: {
@@ -94,8 +209,8 @@ export function savePreparedInvoice(input: {
   tx: PreparedTxPayload;
   stubCalldata: boolean;
 }): InvoiceRecord {
-  const fullName = `${input.label}.${input.domain.name}`;
-  if (byFullName.has(fullName)) {
+  const fullName = `${input.label}.${input.domain.name}`.toLowerCase();
+  if (getInvoiceByFullName(fullName)) {
     throw new Error("Invoice subdomain already exists on Billie");
   }
 
@@ -121,8 +236,16 @@ export function savePreparedInvoice(input: {
     updatedAt: now,
   };
 
-  byId.set(record.id, record);
-  byFullName.set(fullName, record);
+  try {
+    insertInvoice(record);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("UNIQUE") || message.includes("unique")) {
+      throw new Error("Invoice subdomain already exists on Billie");
+    }
+    throw error;
+  }
+
   return record;
 }
 
@@ -142,7 +265,7 @@ export function updateInvoice(
     >
   >,
 ): InvoiceRecord {
-  const existing = byId.get(id);
+  const existing = getInvoice(id);
   if (!existing) {
     throw new Error("Invoice not found");
   }
@@ -151,7 +274,36 @@ export function updateInvoice(
     ...patch,
     updatedAt: new Date().toISOString(),
   };
-  byId.set(id, updated);
-  byFullName.set(updated.fullName, updated);
+
+  getDb()
+    .prepare(
+      `UPDATE invoices SET
+        status = @status,
+        updated_at = @updatedAt,
+        tx_hash = @txHash,
+        texts_tx_hash = @textsTxHash,
+        texts_written = @textsWritten,
+        texts_error = @textsError,
+        error = @error,
+        error_code = @errorCode
+      WHERE id = @id`,
+    )
+    .run({
+      id: updated.id,
+      status: updated.status,
+      updatedAt: updated.updatedAt,
+      txHash: updated.txHash ?? null,
+      textsTxHash: updated.textsTxHash ?? null,
+      textsWritten:
+        updated.textsWritten === undefined
+          ? null
+          : updated.textsWritten
+            ? 1
+            : 0,
+      textsError: updated.textsError ?? null,
+      error: updated.error ?? null,
+      errorCode: updated.errorCode ?? null,
+    });
+
   return updated;
 }
