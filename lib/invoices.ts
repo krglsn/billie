@@ -81,6 +81,12 @@ export function getInvoiceByFullName(
   return byFullName.get(fullName.toLowerCase());
 }
 
+/** Invoices for an agent wallet (in-memory). */
+export function listInvoicesByAgent(agentAddress: string): InvoiceRecord[] {
+  const key = normalizeAddress(agentAddress);
+  return [...byId.values()].filter((inv) => inv.agentAddress === key);
+}
+
 export function savePreparedInvoice(input: {
   id: string;
   label: string;

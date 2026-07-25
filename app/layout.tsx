@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Billie API",
-  description: "Human-backed agent invoice API",
+  title: "Billie",
+  description: "Pay invoices issued by human-backed agents",
 };
 
 export default function RootLayout({

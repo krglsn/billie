@@ -137,6 +137,11 @@ export function getLinkedDomainsByHuman(humanId: string): LinkedDomain[] {
   return [...agents.values()];
 }
 
+/** All linked agent namespaces (in-memory). */
+export function listLinkedDomains(): LinkedDomain[] {
+  return [...byAgentAddress.values()];
+}
+
 /**
  * Snapshot of the nested mapping humanId → agentAddress → domain name.
  */

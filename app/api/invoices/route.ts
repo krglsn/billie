@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { isAddress } from "viem";
 import {
   isNextResponse,
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
 import { checkBillieParentStatus } from "@/lib/billie-parent";
 import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
+import { INVOICE_TEXT_KEYS } from "@/lib/invoice-texts";
 import {
   InvoicePrepareError,
   buildInvoiceRegisterTx,
@@ -12,12 +14,16 @@ import {
 import {
   createInvoiceId,
   getInvoiceByFullName,
+  listInvoicesByAgent,
   normalizeInvoiceLabel,
   savePreparedInvoice,
 } from "@/lib/invoices";
 import {
+  computePaymentStatus,
+  invoiceNode,
   normalizeAtomicAmount,
   normalizeEvmAddress,
+  readRouterPaid,
 } from "@/lib/payment-router";
 
 type PrepareInvoiceBody = {
@@ -28,6 +34,46 @@ type PrepareInvoiceBody = {
   paymentAddress?: unknown;
   domain?: unknown;
 };
+
+/**
+ * Public: list invoices for an agent (in-memory store).
+ *
+ * GET /api/invoices?agent=0x…
+ */
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const agent = url.searchParams.get("agent")?.trim();
+  if (!agent || !isAddress(agent)) {
+    return NextResponse.json(
+      { error: "Missing or invalid query param: agent (0x address)" },
+      { status: 400 },
+    );
+  }
+
+  const records = listInvoicesByAgent(agent);
+  const invoices = await Promise.all(
+    records.map(async (inv) => {
+      const ensStatus = inv.texts[INVOICE_TEXT_KEYS.status] ?? "open";
+      let paidOnRouter: boolean | null = null;
+      if (inv.status === "confirmed" && inv.textsWritten) {
+        try {
+          paidOnRouter = await readRouterPaid(invoiceNode(inv.fullName));
+        } catch {
+          paidOnRouter = null;
+        }
+      }
+      return {
+        fullName: inv.fullName,
+        agentAddress: inv.agentAddress,
+        humanId: inv.humanId,
+        paymentStatus: computePaymentStatus({ paidOnRouter, ensStatus }),
+        registrationStatus: inv.status,
+      };
+    }),
+  );
+
+  return NextResponse.json({ ok: true, agent: agent.toLowerCase(), invoices });
+}
 
 /**
  * Prepare an invoice subdomain registration under the agent's namespace.
