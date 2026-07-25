@@ -122,6 +122,10 @@ pnpm ops:invoice-resolver
 pnpm ops:payment-router
 # add BILLIE_PAYMENT_ROUTER=0x... to .env and restart
 
+# Publish source on Sepolia Etherscan (methods + Solidity on Contract tab):
+# set ETHERSCAN_API_KEY in .env, then:
+pnpm ops:payment-router -- --verify-only
+
 pnpm agent:invoice -- alice.agentinvoice.eth inv-01 1000000 USDC 0xTokenAddress
 BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- alice.agentinvoice.eth inv-02 500000 USDC 0xTokenAddress
 ```

@@ -5,6 +5,10 @@
  *
  *   pnpm ops:payment-router
  *   pnpm ops:payment-router -- --dry-run
+ *   pnpm ops:payment-router -- --verify-only   # verify existing BILLIE_PAYMENT_ROUTER
+ *
+ * After deploy, if ETHERSCAN_API_KEY is set, source is submitted to Sepolia Etherscan
+ * so Contract / Read Contract / Write Contract show methods + Solidity.
  *
  * Then put the printed address in .env:
  *   BILLIE_PAYMENT_ROUTER=0x...
@@ -16,7 +20,9 @@ import { fileURLToPath } from "node:url";
 import {
   createPublicClient,
   createWalletClient,
+  encodeAbiParameters,
   http,
+  parseAbiParameters,
   type Address,
   type Hex,
 } from "viem";
@@ -29,6 +35,7 @@ import {
 } from "@/lib/payment-router";
 
 const DRY_RUN = process.argv.includes("--dry-run");
+const VERIFY_ONLY = process.argv.includes("--verify-only");
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 type ForgeArtifact = {
@@ -50,20 +57,89 @@ function buildArtifact(): ForgeArtifact {
   return JSON.parse(readFileSync(artifactPath, "utf8")) as ForgeArtifact;
 }
 
-async function main() {
-  const existing = getBilliePaymentRouterAddress();
-  if (existing) {
-    console.log("BILLIE_PAYMENT_ROUTER already set:", existing);
-    console.log("Unset it to deploy a new router.");
-    process.exit(0);
+function constructorArgsHex(resolver: Address): Hex {
+  return encodeAbiParameters(parseAbiParameters("address"), [resolver]);
+}
+
+/** Submit source to Sepolia Etherscan via forge (needs ETHERSCAN_API_KEY). */
+function verifyOnEtherscan(input: {
+  router: Address;
+  resolver: Address;
+}): void {
+  const apiKey = process.env.ETHERSCAN_API_KEY?.trim();
+  if (!apiKey) {
+    console.log(
+      "\nSkip Etherscan verify — set ETHERSCAN_API_KEY to publish source/ABI.",
+    );
+    console.log(
+      "Get a key at https://etherscan.io/apidashboard (works for Sepolia).",
+    );
+    console.log("Then re-run: pnpm ops:payment-router -- --verify-only");
+    return;
   }
 
+  const argsHex = constructorArgsHex(input.resolver);
+  // Sepolia chain id — Etherscan deprecated V1; V2 uses a single host + chainid.
+  const verifierUrl = "https://api.etherscan.io/v2/api?chainid=11155111";
+  console.log("\nVerifying on Sepolia Etherscan (API V2)...");
+  console.log({
+    address: input.router,
+    constructorArg: input.resolver,
+    verifierUrl,
+    explorer: `https://sepolia.etherscan.io/address/${input.router}#code`,
+  });
+
+  execFileSync(
+    "forge",
+    [
+      "verify-contract",
+      "--chain",
+      "sepolia",
+      "--verifier",
+      "etherscan",
+      "--verifier-url",
+      verifierUrl,
+      "--etherscan-api-key",
+      apiKey,
+      "--watch",
+      "--constructor-args",
+      argsHex,
+      input.router,
+      "contracts/PaymentRouter.sol:PaymentRouter",
+    ],
+    { cwd: ROOT, stdio: "inherit" },
+  );
+
+  console.log("\nVerified — open Contract tab:");
+  console.log(`https://sepolia.etherscan.io/address/${input.router}#code`);
+}
+
+async function main() {
   const resolver = getBillieInvoiceResolverAddress();
   if (!resolver) {
     console.error(
       "Set BILLIE_INVOICE_RESOLVER in .env (pnpm ops:invoice-resolver first)",
     );
     process.exit(1);
+  }
+
+  if (VERIFY_ONLY) {
+    const router = getBilliePaymentRouterAddress();
+    if (!router) {
+      console.error("Set BILLIE_PAYMENT_ROUTER in .env for --verify-only");
+      process.exit(1);
+    }
+    buildArtifact();
+    verifyOnEtherscan({ router, resolver });
+    process.exit(0);
+  }
+
+  const existing = getBilliePaymentRouterAddress();
+  if (existing) {
+    console.log("BILLIE_PAYMENT_ROUTER already set:", existing);
+    console.log("Unset it to deploy a new router.");
+    console.log("Or verify existing: pnpm ops:payment-router -- --verify-only");
+    process.exit(0);
   }
 
   const key = process.env.BILLIE_PRIVATE_KEY as `0x${string}` | undefined;
@@ -131,6 +207,8 @@ async function main() {
   console.log("invoiceResolver:", onChainResolver);
   console.log("\nAdd to .env:");
   console.log(`BILLIE_PAYMENT_ROUTER=${router}`);
+
+  verifyOnEtherscan({ router, resolver });
 }
 
 main().catch((error) => {
