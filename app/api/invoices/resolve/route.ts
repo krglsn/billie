@@ -95,7 +95,7 @@ export async function GET(request: Request) {
       : (settlement.paymentAddress ?? memory?.paymentAddress);
 
   const pay =
-    router && token && amountAtomic && paymentStatus !== "paid"
+    router && routerCheck?.payable === true && token && amountAtomic
       ? {
           chainId: "eip155:11155111" as const,
           router,
