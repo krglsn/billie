@@ -28,6 +28,10 @@ pnpm dev --hostname 127.0.0.1 --port 3000
 
 Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sepolia RPCs default to public endpoints if unset.
 
+## Chat client (Cursor Skill)
+
+Use Billie from any Cursor chat without the full app checkout: copy [`.cursor/skills/billie-agent`](./.cursor/skills/billie-agent) to `~/.cursor/skills/billie-agent`, `npm install`, set `.env`, then say e.g. `create domain alice` / `create invoice inv01 for 100 USDC` / `check invoice status`. Plan: [`docs/billie-agent-skill.md`](./docs/billie-agent-skill.md).
+
 ## Endpoints (Stage 1)
 
 | Method | Path | Auth | Notes |

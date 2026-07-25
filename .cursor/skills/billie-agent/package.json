@@ -1,0 +1,20 @@
+{
+  "name": "billie-agent-skill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "me": "node --env-file=.env --import tsx scripts/me.ts",
+    "domain": "node --env-file=.env --import tsx scripts/domain.ts",
+    "invoice": "node --env-file=.env --import tsx scripts/invoice.ts",
+    "status": "node --env-file=.env --import tsx scripts/status.ts"
+  },
+  "dependencies": {
+    "@worldcoin/agentkit": "^0.2.0",
+    "viem": "^2.55.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.1",
+    "typescript": "^5"
+  }
+}
