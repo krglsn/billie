@@ -15,19 +15,34 @@ import {
   normalizeInvoiceLabel,
   savePreparedInvoice,
 } from "@/lib/invoices";
+import {
+  normalizeAtomicAmount,
+  normalizeEvmAddress,
+} from "@/lib/payment-router";
 
 type PrepareInvoiceBody = {
   label?: unknown;
   amount?: unknown;
   currency?: unknown;
+  token?: unknown;
+  paymentAddress?: unknown;
   domain?: unknown;
 };
 
 /**
  * Prepare an invoice subdomain registration under the agent's namespace.
  *
- * Body: { "label": "inv-01", "amount": "100", "currency": "USDC", "domain"?: "alice.parent.eth" }
+ * Body: {
+ *   "label": "inv-01",
+ *   "amount": "1000000",
+ *   "currency": "USDC",
+ *   "token": "0x…",
+ *   "paymentAddress"?: "0x…",
+ *   "domain"?: "alice.parent.eth"
+ * }
  *
+ * `amount` is atomic units (e.g. 1 USDC with 6 decimals → "1000000").
+ * `paymentAddress` defaults to the agent wallet.
  * `register` targets the agent UserRegistry → `inv-01.alice.parent.eth`.
  * Agent signs and submits via POST /api/invoices/submit (agent pays gas).
  */
@@ -123,13 +138,19 @@ export async function POST(request: Request) {
   }
   if (typeof body.amount !== "string" || !body.amount.trim()) {
     return NextResponse.json(
-      { error: "Missing required field: amount (string)" },
+      { error: "Missing required field: amount (atomic integer string)" },
       { status: 400 },
     );
   }
   if (typeof body.currency !== "string" || !body.currency.trim()) {
     return NextResponse.json(
       { error: "Missing required field: currency (string)" },
+      { status: 400 },
+    );
+  }
+  if (typeof body.token !== "string" || !body.token.trim()) {
+    return NextResponse.json(
+      { error: "Missing required field: token (ERC-20 address)" },
       { status: 400 },
     );
   }
@@ -147,7 +168,30 @@ export async function POST(request: Request) {
     );
   }
 
-  const amount = body.amount.trim();
+  let amount: string;
+  let token: string;
+  let paymentAddress: string;
+  try {
+    amount = normalizeAtomicAmount(body.amount);
+    token = normalizeEvmAddress(body.token, "token");
+    paymentAddress =
+      body.paymentAddress === undefined || body.paymentAddress === null
+        ? normalizeEvmAddress(domain.agentAddress, "paymentAddress")
+        : typeof body.paymentAddress === "string"
+          ? normalizeEvmAddress(body.paymentAddress, "paymentAddress")
+          : (() => {
+              throw new Error("paymentAddress must be a string address");
+            })();
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "Invalid settlement fields",
+        detail: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 400 },
+    );
+  }
+
   const currency = body.currency.trim().toUpperCase();
   const fullName = `${label}.${domain.name}`;
 
@@ -166,6 +210,8 @@ export async function POST(request: Request) {
       label,
       amount,
       currency,
+      token,
+      paymentAddress,
       domain,
     });
   } catch (error) {
@@ -201,6 +247,8 @@ export async function POST(request: Request) {
     label,
     amount,
     currency,
+    token,
+    paymentAddress,
     domain,
     attestation: prepared.attestation,
     texts: prepared.texts,
@@ -218,6 +266,8 @@ export async function POST(request: Request) {
     fullName: invoice.fullName,
     amount: invoice.amount,
     currency: invoice.currency,
+    token: invoice.token,
+    paymentAddress: invoice.paymentAddress,
     rootDomain: invoice.rootDomain,
     namespace: domain.name,
     subregistry: domain.subregistry,

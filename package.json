@@ -10,8 +10,11 @@
     "agent:me": "node --env-file=.env --import tsx scripts/agent-me.ts",
     "agent:domain": "node --env-file=.env --import tsx scripts/agent-domain.ts",
     "agent:invoice": "node --env-file=.env --import tsx scripts/agent-invoice.ts",
+    "invoice:status": "node --env-file=.env --import tsx scripts/invoice-status.ts",
     "ops:parent-registry": "node --env-file=.env --import tsx scripts/ops-setup-parent-registry.ts",
-    "ops:invoice-resolver": "node --env-file=.env --import tsx scripts/ops-setup-invoice-resolver.ts"
+    "ops:invoice-resolver": "node --env-file=.env --import tsx scripts/ops-setup-invoice-resolver.ts",
+    "ops:payment-router": "node --env-file=.env --import tsx scripts/ops-deploy-payment-router.ts",
+    "pay:invoice": "node --env-file=.env --import tsx scripts/pay-invoice.ts"
   },
   "dependencies": {
     "@worldcoin/agentkit": "^0.2.0",

@@ -26,6 +26,8 @@ export const INVOICE_TEXT_KEYS = {
   invoiceId: "billie.invoiceId",
   amount: "billie.amount",
   currency: "billie.currency",
+  token: "billie.token",
+  paymentAddress: "billie.paymentAddress",
   status: "billie.status",
   recipient: "billie.recipient",
   parent: "billie.parent",
@@ -46,6 +48,8 @@ export function buildInvoiceTextRecords(input: {
   fullName: string;
   amount: string;
   currency: string;
+  token: string;
+  paymentAddress: string;
   status?: string;
   domain: LinkedDomain;
   attestation: InvoiceAttestation;
@@ -54,6 +58,8 @@ export function buildInvoiceTextRecords(input: {
     [INVOICE_TEXT_KEYS.invoiceId]: input.invoiceId,
     [INVOICE_TEXT_KEYS.amount]: input.amount,
     [INVOICE_TEXT_KEYS.currency]: input.currency,
+    [INVOICE_TEXT_KEYS.token]: input.token,
+    [INVOICE_TEXT_KEYS.paymentAddress]: input.paymentAddress,
     [INVOICE_TEXT_KEYS.status]: input.status ?? "open",
     [INVOICE_TEXT_KEYS.recipient]: input.domain.name,
     [INVOICE_TEXT_KEYS.parent]: input.domain.parentName,

@@ -22,6 +22,8 @@ export type InvoiceRecord = {
   fullName: string;
   amount: string;
   currency: string;
+  token: string;
+  paymentAddress: string;
   rootDomain: string;
   agentAddress: string;
   humanId: string;
@@ -84,6 +86,8 @@ export function savePreparedInvoice(input: {
   label: string;
   amount: string;
   currency: string;
+  token: string;
+  paymentAddress: string;
   domain: LinkedDomain;
   attestation: InvoiceAttestation;
   texts: InvoiceTextRecords;
@@ -102,6 +106,8 @@ export function savePreparedInvoice(input: {
     fullName,
     amount: input.amount,
     currency: input.currency,
+    token: input.token,
+    paymentAddress: input.paymentAddress,
     rootDomain: input.domain.name,
     agentAddress: normalizeAddress(input.domain.agentAddress),
     humanId: input.domain.humanId,

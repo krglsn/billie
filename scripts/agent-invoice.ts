@@ -3,8 +3,10 @@
  *
  * Requires a claimed namespace for the agent (POST /api/domains first).
  *
- *   pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency>
- *   pnpm agent:invoice -- alice.agentinvoice.eth inv-01 100 USDC
+ *   pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency> <token> [paymentAddress]
+ *   pnpm agent:invoice -- alice.agentinvoice.eth inv-01 1000000 USDC 0xToken…
+ *
+ * `amount` is atomic units. `paymentAddress` defaults to the agent wallet on the API.
  *
  * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia register tx and POST /api/invoices/submit
  * (agent pays gas for register; Billie writes text records after confirm).
@@ -37,16 +39,18 @@ function parseArgs(argv: string[]): {
   label: string;
   amount: string;
   currency: string;
+  token: string;
+  paymentAddress?: string;
 } {
   // pnpm forwards a literal "--" when invoked as `pnpm agent:invoice -- …`
   const args = argv.slice(2).filter((a) => a !== "--");
-  const [domain, label, amount, currency] = args;
-  if (!domain || !label || !amount || !currency) {
+  const [domain, label, amount, currency, token, paymentAddress] = args;
+  if (!domain || !label || !amount || !currency || !token) {
     throw new Error(
-      "Usage: pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency>",
+      "Usage: pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency> <token> [paymentAddress]",
     );
   }
-  return { domain, label, amount, currency };
+  return { domain, label, amount, currency, token, paymentAddress };
 }
 
 async function main() {
@@ -64,7 +68,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { domain, label, amount, currency } = parsed;
+  const { domain, label, amount, currency, token, paymentAddress } = parsed;
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
   console.log(`Namespace: ${domain}`);
@@ -79,11 +83,20 @@ async function main() {
     onEvent: (event) => console.log("  agentkit:", event.type),
   });
 
-  console.log(`Preparing invoice ${label} (${amount} ${currency})...`);
+  console.log(
+    `Preparing invoice ${label} (${amount} ${currency}, token=${token})...`,
+  );
   const prepareRes = await agentkit.fetch(`${API_URL}/api/invoices`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ domain, label, amount, currency }),
+    body: JSON.stringify({
+      domain,
+      label,
+      amount,
+      currency,
+      token,
+      ...(paymentAddress ? { paymentAddress } : {}),
+    }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const prepared = await prepareRes.json().catch(() => null);
