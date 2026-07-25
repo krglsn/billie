@@ -70,6 +70,16 @@ export const userRegistryWriteAbi = [
   },
   {
     type: "function",
+    name: "getParent",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "parent", type: "address" },
+      { name: "label", type: "string" },
+    ],
+  },
+  {
+    type: "function",
     name: "register",
     stateMutability: "nonpayable",
     inputs: [
@@ -93,6 +103,93 @@ export const userRegistryWriteAbi = [
     outputs: [{ type: "bool" }],
   },
 ] as const;
+
+/** Floor + 2× estimate — flaky public RPCs sometimes under-estimate and OOG. */
+const MIN_WRITE_GAS = BigInt(200_000);
+
+export async function writeContractBuffered(
+  clients: BillieSepoliaClients,
+  params: {
+    address: Address;
+    abi: typeof verifiableFactoryAbi | typeof userRegistryWriteAbi | readonly unknown[];
+    functionName: string;
+    args: readonly unknown[];
+  },
+): Promise<Hex> {
+  const base = {
+    address: params.address,
+    abi: params.abi as typeof userRegistryWriteAbi,
+    functionName: params.functionName as "setParent",
+    args: params.args as never,
+    account: clients.account,
+    chain: sepolia,
+  };
+
+  let gas = MIN_WRITE_GAS;
+  try {
+    const estimated = await clients.publicClient.estimateContractGas(base);
+    const buffered = estimated * BigInt(2);
+    gas = buffered > MIN_WRITE_GAS ? buffered : MIN_WRITE_GAS;
+  } catch {
+    // Keep floor when estimate reverts or RPC is flaky.
+  }
+
+  return clients.walletClient.writeContract({ ...base, gas });
+}
+
+/** Find a prior VerifiableFactory ProxyDeployed for this deployer + saltKey. */
+export async function findDeployedUserRegistry(input: {
+  publicClient: PublicClient;
+  deployer: Address;
+  saltKey: string;
+}): Promise<Address | null> {
+  const fromEnv = process.env.BILLIE_PARENT_USER_REGISTRY?.trim();
+  if (fromEnv?.startsWith("0x") && fromEnv.length === 42) {
+    const code = await input.publicClient.getCode({
+      address: fromEnv as Address,
+    });
+    if (code && code !== "0x") {
+      return fromEnv as Address;
+    }
+  }
+
+  const factory = getVerifiableFactoryAddress();
+  const salt = BigInt(keccak256(stringToHex(input.saltKey)));
+
+  const tryRange = async (fromBlock: bigint) => {
+    const logs = await input.publicClient.getContractEvents({
+      address: factory,
+      abi: verifiableFactoryAbi,
+      eventName: "ProxyDeployed",
+      args: { sender: input.deployer },
+      fromBlock,
+      toBlock: "latest",
+    });
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const log = logs[i];
+      if (log.args.salt === salt && log.args.proxyAddress) {
+        return log.args.proxyAddress as Address;
+      }
+    }
+    return null;
+  };
+
+  try {
+    const found = await tryRange(BigInt(0));
+    if (found) return found;
+  } catch {
+    // Public RPCs often reject eth_getLogs from genesis — fall back to a recent window.
+  }
+
+  try {
+    const latest = await input.publicClient.getBlockNumber();
+    const window = BigInt(200_000);
+    const fromBlock = latest > window ? latest - window : BigInt(0);
+    return await tryRange(fromBlock);
+  } catch {
+    return null;
+  }
+}
 
 export type BillieSepoliaClients = {
   account: Account;
@@ -151,19 +248,34 @@ export async function deployUserRegistry(input: {
     args: [admin, adminRoles],
   });
 
-  const deployTx = await clients.walletClient.writeContract({
+  const existing = await findDeployedUserRegistry({
+    publicClient: clients.publicClient,
+    deployer: admin,
+    saltKey,
+  });
+  if (existing) {
+    return { userRegistry: existing, deployTx: "0x" as Hex };
+  }
+
+  const deployTx = await writeContractBuffered(clients, {
     address: factory,
     abi: verifiableFactoryAbi,
     functionName: "deployProxy",
     args: [impl, salt, initData],
-    account: clients.account,
-    chain: sepolia,
   });
 
   const receipt = await clients.publicClient.waitForTransactionReceipt({
     hash: deployTx,
   });
   if (receipt.status !== "success") {
+    const recovered = await findDeployedUserRegistry({
+      publicClient: clients.publicClient,
+      deployer: admin,
+      saltKey,
+    });
+    if (recovered) {
+      return { userRegistry: recovered, deployTx };
+    }
     throw new Error(`deployProxy reverted (${deployTx})`);
   }
 
@@ -186,13 +298,11 @@ export async function setUserRegistryParent(input: {
   parentRegistry: Address;
   label: string;
 }): Promise<Hex> {
-  const hash = await input.clients.walletClient.writeContract({
+  const hash = await writeContractBuffered(input.clients, {
     address: input.userRegistry,
     abi: userRegistryWriteAbi,
     functionName: "setParent",
     args: [input.parentRegistry, input.label],
-    account: input.clients.account,
-    chain: sepolia,
   });
   await waitSuccess(input.clients.publicClient, hash, "setParent");
   return hash;
@@ -204,13 +314,11 @@ export async function grantRootRoles(input: {
   roleBitmap: bigint;
   account: Address;
 }): Promise<Hex> {
-  const hash = await input.clients.walletClient.writeContract({
+  const hash = await writeContractBuffered(input.clients, {
     address: input.registry,
     abi: userRegistryWriteAbi,
     functionName: "grantRootRoles",
     args: [input.roleBitmap, input.account],
-    account: input.clients.account,
-    chain: sepolia,
   });
   await waitSuccess(input.clients.publicClient, hash, "grantRootRoles");
   return hash;
@@ -226,7 +334,7 @@ export async function registerName(input: {
   roleBitmap: bigint;
   expiry: bigint;
 }): Promise<{ tx: Hex; tokenId: bigint }> {
-  const hash = await input.clients.walletClient.writeContract({
+  const hash = await writeContractBuffered(input.clients, {
     address: input.registry,
     abi: userRegistryWriteAbi,
     functionName: "register",
@@ -238,8 +346,6 @@ export async function registerName(input: {
       input.roleBitmap,
       input.expiry,
     ],
-    account: input.clients.account,
-    chain: sepolia,
   });
   await waitSuccess(input.clients.publicClient, hash, "register");
 
