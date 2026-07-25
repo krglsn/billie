@@ -35,9 +35,10 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 | `GET` | `/api/health` | public | liveness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
 | `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
+| `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
+| `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
 
-`/api/invoices` is **not** in Stage 1 yet (same Sepolia ENSv2 root when added).
-
+`/api/invoices` requires a previously linked domain for the agent.
 Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
 
 ### Domain claim / link
@@ -60,6 +61,22 @@ Register the `.eth` name yourself on **Ethereum Sepolia ENSv2** (`app.ens.dev`) 
 | `200` | linked; response includes `mapping` |
 
 Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet.
+
+### Invoice prepare + submit (minimal)
+
+1. Agent has a linked root domain.
+2. `POST /api/invoices` with `{ "label": "inv-01", "amount": "100", "currency": "USDC" }` → Billie EIP-712 `attestation` (off-chain; later ENS text `billie.attestation`) + `register` calldata (no text records yet). Requires `BILLIE_PRIVATE_KEY`.
+3. Agent signs the returned tx on Sepolia.
+4. `POST /api/invoices/submit` with `{ "invoiceId", "signedTx" }` → Billie verifies match, broadcasts, waits ~45s for 1 confirmation (or returns `submitted` + hash on timeout).
+
+If the root name has no ENSv2 subregistry, calldata is still prepared (`stubCalldata: true`) and may revert on-chain — enough to test the API scheme.
+
+```bash
+pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
+BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- agentinvoice3.eth inv-02 50 USDC
+# Stub calldata reverts in estimateGas — force fees to broadcast and see on-chain revert:
+BILLIE_SUBMIT_INVOICE=1 BILLIE_SKIP_GAS_ESTIMATE=1 pnpm agent:invoice -- agentinvoice3.eth inv-05 50 USDC
+```
 
 ---
 
