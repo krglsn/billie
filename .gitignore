@@ -21,6 +21,11 @@
 /cache
 /broadcast
 
+# local sqlite
+/data/
+*.sqlite
+*.sqlite-*
+
 # production
 /build
 

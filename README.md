@@ -79,7 +79,7 @@ and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
 4. If the namespace is already linked, or this agent already has one → `409`.
 5. Billie deploys agent UserRegistry, grants `ROLE_REGISTRAR` to the agent, registers the label under the parent registry.
    If the namespace is **already on-chain** for this agent (owner + UserRegistry + `ROLE_REGISTRAR`), Billie **re-links** it in memory after a restart (`relinked: true`, no new txs).
-6. Stores `humanId → agentAddress → namespace` (includes `subregistry` for later invoices).
+6. Stores `humanId → agentAddress → namespace` in SQLite (`data/billie.sqlite`, override with `BILLIE_DB_PATH`) including `subregistry` for later invoices.
 
 Optional anti-abuse (Billie pays gas for new namespaces): set `BILLIE_DOMAIN_CLAIM_RATE_LIMIT` + `BILLIE_DOMAIN_CLAIM_RATE_WINDOW_SEC` (default window 86400s). Exceeded → `429` + `Retry-After`. Re-links do not count.
 

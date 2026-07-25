@@ -11,10 +11,12 @@ Laconic payer UI on top of existing invoice + PaymentRouter APIs.
 
 ## API additions (public)
 
-- `GET /api/agents` — linked agents with `domains[]` from in-memory domain store.
+- `GET /api/agents` — linked agents with `domains[]` from SQLite domain store.
 - `GET /api/invoices?agent=0x…&domain=…` — invoices for that agent/domain; `paymentStatus` via memory texts + `paid(node)` when router is configured.
 
 Detail page reuses `GET /api/invoices/resolve?name=`.
+
+Linked domains and invoices persist in SQLite (`data/billie.sqlite`, override with `BILLIE_DB_PATH`).
 
 ## UI
 
@@ -24,4 +26,4 @@ Detail page reuses `GET /api/invoices/resolve?name=`.
 
 ## Out of scope
 
-Invoice creation UI, chain indexer after API restart, native ETH, dashboard auth.
+Invoice creation UI, native ETH, dashboard auth.
