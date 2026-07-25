@@ -116,7 +116,10 @@ v1 policy: Paid only via the router. External / manual `markPaid` can come later
 1. Extend ENS text schema (`token`, `paymentAddress`, atomic amount) on issue.
 2. Operator runs payment-router deploy script → set `BILLIE_PAYMENT_ROUTER`.
 3. Status/resolve API: lazy `eth_call` to `paid` / `checkInvoice`.
-4. Minimal pay flow: check → approve → pay → re-check status.
+4. Smoke scripts:
+   - `pnpm agent:invoice -- <ns> <label> <atomicAmount> <currency> <token> [paymentAddress]`
+   - `pnpm invoice:status -- <invoice.full.name.eth>`
+   - `pnpm pay:invoice -- <invoice.full.name.eth> <payerPrivateKey>`
 
 ## Risks
 

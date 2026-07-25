@@ -135,8 +135,11 @@ Design notes: [docs/invoice-payment-router.md](./docs/invoice-payment-router.md)
 3. Re-resolve: `paymentStatus` becomes `paid` when `paid[node]` is true (no event listener).
 
 ```bash
-pnpm pay:invoice -- inv-01.alice.agentinvoice.eth
-BILLIE_PAY_INVOICE=1 pnpm pay:invoice -- inv-01.alice.agentinvoice.eth
+# Status only (no wallet)
+pnpm invoice:status -- inv-01.alice.agentinvoice.eth
+
+# Approve + pay from a third-party wallet (private key on CLI)
+pnpm pay:invoice -- inv-01.alice.agentinvoice.eth 0xPayerPrivateKey
 ```
 
 ---
