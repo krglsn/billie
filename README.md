@@ -13,8 +13,8 @@ Human-backed agent invoice API (Stage 1).
 
 | Asset | Network | CAIP-2 |
 |-------|---------|--------|
-| Root ENS domain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
-| Invoice subdomain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
+| Parent ENS (`BILLIE_PARENT_NAME`) | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
+| Agent namespace + invoice subdomains | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
 | AgentBook lookup | World Chain | `eip155:480` |
 
 ## Setup
@@ -32,50 +32,86 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| `GET` | `/api/health` | public | liveness |
+| `GET` | `/api/health` | public | liveness + Billie parent ENSv2 readiness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
-| `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
+| `POST` | `/api/domains` | AgentKit | provision agent namespace under parent + link |
 | `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
 | `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
+
+### Parent domain readiness (`GET /api/health`)
+
+Billie is pivoting to a single parent name (`BILLIE_PARENT_NAME`, e.g. `billie.eth`) owned by `BILLIE_PRIVATE_KEY`. Health checks on-chain:
+
+1. Parent name registered on Sepolia ENSv2
+2. Owner matches `BILLIE_PRIVATE_KEY`
+3. A UserRegistry is attached (`getSubregistry`)
+4. Billie has `ROLE_REGISTRAR` on that registry (can provision agent namespaces)
+
+HTTP **200** when ready, **503** when any required check fails. Response includes `parent.checks[]`.
+
+```bash
+# .env: BILLIE_PRIVATE_KEY + BILLIE_PARENT_NAME=yourname.eth
+# Register yourname.eth on app.ens.dev to that same address first.
+
+curl -s http://127.0.0.1:3000/api/health | jq .
+# registered, no UserRegistry yet → ok:false, subregistry_attached fails
+
+pnpm ops:parent-registry
+# deploys UserRegistry, setParent, setSubregistry
+
+curl -s http://127.0.0.1:3000/api/health | jq .
+# → ok:true, canProvisionAgents:true
+```
 
 `/api/invoices` requires a previously linked domain for the agent.
 Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
 
-### Domain claim / link
+### Domain claim / namespace provision
 
-Register the `.eth` name yourself on **Ethereum Sepolia ENSv2** (`app.ens.dev`) with the **same** wallet you use as the AgentKit agent, then link it:
+Billie owns `BILLIE_PARENT_NAME` (e.g. `agentinvoice.eth`) and its UserRegistry.
+Agents claim a **namespace** under that parent — Billie deploys their UserRegistry
+and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
 
-1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional) + AgentKit.
-2. API verifies human-backed identity (AgentBook on World Chain).
-3. If the name is already linked, or this agent already has a domain → `409`.
-4. API reads ENSv2 `ETHRegistry.getState(labelhash)` on Sepolia and requires `owner == agentAddress`.
-5. On success, stores `humanId → agentAddress → domain` (plus indexes by name / agent) and returns the mapping.
+1. Ensure `/api/health` is `ok: true` (`pnpm ops:parent-registry` if needed).
+2. `POST /api/domains` with `{ "name": "alice" }` (or `alice.agentinvoice.eth`) + AgentKit.
+3. API verifies human-backed identity (AgentBook on World Chain).
+4. If the namespace is already linked, or this agent already has one → `409`.
+5. Billie deploys agent UserRegistry, grants `ROLE_REGISTRAR` to the agent, registers the label under the parent registry.
+   If the namespace is **already on-chain** for this agent (owner + UserRegistry + `ROLE_REGISTRAR`), Billie **re-links** it in memory after a restart (`relinked: true`, no new txs).
+6. Stores `humanId → agentAddress → namespace` (includes `subregistry` for later invoices).
+
+Optional anti-abuse (Billie pays gas for new namespaces): set `BILLIE_DOMAIN_CLAIM_RATE_LIMIT` + `BILLIE_DOMAIN_CLAIM_RATE_WINDOW_SEC` (default window 86400s). Exceeded → `429` + `Retry-After`. Re-links do not count.
 
 | Status | Meaning |
 |--------|---------|
 | `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
-| `409` | domain already linked, or agent already has a linked domain |
-| `404` | name not registered on Sepolia ENSv2 |
-| `403` | ENSv2 owner ≠ agent address |
-| `502` | Sepolia RPC / lookup failure |
-| `200` | linked; response includes `mapping` |
-
-Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet.
-
-### Invoice prepare + submit (minimal)
-
-1. Agent has a linked root domain.
-2. `POST /api/invoices` with `{ "label": "inv-01", "amount": "100", "currency": "USDC" }` → Billie EIP-712 `attestation` (off-chain; later ENS text `billie.attestation`) + `register` calldata (no text records yet). Requires `BILLIE_PRIVATE_KEY`.
-3. Agent signs the returned tx on Sepolia.
-4. `POST /api/invoices/submit` with `{ "invoiceId", "signedTx" }` → Billie verifies match, broadcasts, waits ~45s for 1 confirmation (or returns `submitted` + hash on timeout).
-
-If the root name has no ENSv2 subregistry, calldata is still prepared (`stubCalldata: true`) and may revert on-chain — enough to test the API scheme.
+| `409` | namespace already linked, label taken on-chain, or agent already has a namespace |
+| `429` | humanId domain-claim rate limit (`BILLIE_DOMAIN_CLAIM_RATE_LIMIT`) |
+| `503` | parent UserRegistry not ready / Billie key missing |
+| `502` | on-chain provision failed |
+| `200` | provisioned + linked; response includes `mapping`, `subregistry`, `txs` |
 
 ```bash
-pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
-BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- agentinvoice3.eth inv-02 50 USDC
-# Stub calldata reverts in estimateGas — force fees to broadcast and see on-chain revert:
-BILLIE_SUBMIT_INVOICE=1 BILLIE_SKIP_GAS_ESTIMATE=1 pnpm agent:invoice -- agentinvoice3.eth inv-05 50 USDC
+pnpm agent:domain -- alice
+# → 200 + alice.<BILLIE_PARENT_NAME> + subregistry
+```
+
+### Invoice prepare + submit
+
+Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice.eth`.
+
+1. Deploy invoice resolver once: `pnpm ops:invoice-resolver` → set `BILLIE_INVOICE_RESOLVER` in `.env`, restart API.
+2. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
+3. `POST /api/invoices` → requires `canWriteInvoiceTexts`; returns attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver). `503` + `invoice_texts_unavailable` if resolver/roles not ready.
+4. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
+5. After confirm, Billie writes ENS text records via resolver `multicall` (`billie.amount`, `billie.attestation`, …). Differentiated `code` if register or texts fail.
+
+```bash
+pnpm ops:invoice-resolver
+# add BILLIE_INVOICE_RESOLVER=0x... to .env and restart
+
+pnpm agent:invoice -- alice.agentinvoice.eth inv-01 100 USDC
+BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- alice.agentinvoice.eth inv-02 50 USDC
 ```
 
 ---
@@ -94,7 +130,8 @@ pnpm dev --hostname 127.0.0.1 --port 3000
 
 ```bash
 curl -s http://127.0.0.1:3000/api/health
-# → {"ok":true,"service":"billie","stage":1}
+# → 200 + ok:true when BILLIE_PARENT_NAME is registered, owned by BILLIE_PRIVATE_KEY, and UserRegistry is attached
+# → 503 + ok:false + parent.checks[] when not ready (e.g. missing subregistry)
 ```
 
 ### 3. Unauthenticated protected routes → 402
@@ -129,27 +166,23 @@ pnpm agent:me
 # → 200 + humanId
 ```
 
-### 6. Domain claim
+### 6. Namespace claim
 
-1. On Ethereum Sepolia ENSv2 (`app.ens.dev`), register `myagent.eth` to the **agent** address.
-2. Link it:
+1. Parent ready: `curl -s http://127.0.0.1:3000/api/health` → `ok: true`
+2. Claim a label under the parent:
 
 ```bash
-pnpm agent:domain -- myagent
-# → 200 + mapping { humanId, agentAddress, domain }
+pnpm agent:domain -- alice
+# → 200 + mapping { humanId, agentAddress, domain: "alice.<parent>.eth" } + subregistry
 
-pnpm agent:domain -- myagent
-# → 409 domain already linked (or agent already has a domain)
+pnpm agent:domain -- alice
+# → 409 already linked (or agent already has a namespace)
 ```
 
 ### Pass criteria
 
-- [ ] `/api/health` → 200
+- [ ] `/api/health` → 200 when parent + UserRegistry ready (else 503 + `parent.checks`)
 - [ ] `/api/me` and `/api/domains` without AgentKit → 402
 - [ ] Registered agent → `/api/me` 200 + `humanId`
-- [ ] Agent-owned Sepolia ENSv2 name → `/api/domains` 200 + mapping
-- [ ] Same name twice → 409
-- [ ] Second domain for same agent → 409
-- [ ] Wrong owner / missing ENS → 403 / 404
-
-See [PLAN.md](./PLAN.md) for scope and follow-ups.
+- [ ] Human-backed agent → `/api/domains` provisions namespace + returns `subregistry`
+- [ ] Same namespace twice / second namespace for same agent → 409

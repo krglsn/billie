@@ -1,12 +1,20 @@
 import { randomBytes } from "crypto";
 import type { InvoiceAttestation } from "@/lib/billie-attestation";
 import type { LinkedDomain } from "@/lib/domains";
+import type { InvoiceTextRecords } from "@/lib/invoice-texts";
+import type { Hex } from "viem";
 
 export type InvoiceStatus =
   | "prepared"
   | "submitted"
   | "confirmed"
   | "failed";
+
+export type PreparedTxPayload = {
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value: "0";
+};
 
 export type InvoiceRecord = {
   id: string;
@@ -18,19 +26,20 @@ export type InvoiceRecord = {
   agentAddress: string;
   humanId: string;
   status: InvoiceStatus;
-  /** Off-chain Billie sig; later ENS text `billie.attestation`. */
   attestation: InvoiceAttestation;
+  texts: InvoiceTextRecords;
   chainId: "eip155:11155111";
-  tx: {
-    to: `0x${string}`;
-    data: `0x${string}`;
-    value: "0";
-  };
+  /** register() on agent UserRegistry — agent-signed */
+  tx: PreparedTxPayload;
   stubCalldata: boolean;
   createdAt: string;
   updatedAt: string;
   txHash?: `0x${string}`;
+  textsTxHash?: Hex;
+  textsWritten?: boolean;
+  textsError?: string;
   error?: string;
+  errorCode?: string;
 };
 
 const byId = new Map<string, InvoiceRecord>();
@@ -77,7 +86,8 @@ export function savePreparedInvoice(input: {
   currency: string;
   domain: LinkedDomain;
   attestation: InvoiceAttestation;
-  tx: InvoiceRecord["tx"];
+  texts: InvoiceTextRecords;
+  tx: PreparedTxPayload;
   stubCalldata: boolean;
 }): InvoiceRecord {
   const fullName = `${input.label}.${input.domain.name}`;
@@ -97,6 +107,7 @@ export function savePreparedInvoice(input: {
     humanId: input.domain.humanId,
     status: "prepared",
     attestation: input.attestation,
+    texts: input.texts,
     chainId: "eip155:11155111",
     tx: input.tx,
     stubCalldata: input.stubCalldata,
@@ -112,7 +123,17 @@ export function savePreparedInvoice(input: {
 export function updateInvoice(
   id: string,
   patch: Partial<
-    Pick<InvoiceRecord, "status" | "txHash" | "error" | "updatedAt">
+    Pick<
+      InvoiceRecord,
+      | "status"
+      | "txHash"
+      | "error"
+      | "errorCode"
+      | "updatedAt"
+      | "textsTxHash"
+      | "textsWritten"
+      | "textsError"
+    >
   >,
 ): InvoiceRecord {
   const existing = byId.get(id);

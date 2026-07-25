@@ -1,17 +1,16 @@
 /**
  * Smoke-test invoice prepare (+ optional submit).
  *
- * Requires a claimed domain for the agent (POST /api/domains first).
+ * Requires a claimed namespace for the agent (POST /api/domains first).
  *
- *   pnpm agent:invoice -- <domain.eth> <label> <amount> <currency>
- *   pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
+ *   pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency>
+ *   pnpm agent:invoice -- alice.agentinvoice.eth inv-01 100 USDC
  *
- * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia tx and POST /api/invoices/submit.
- * Stub calldata often reverts in eth_estimateGas — use:
+ * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia register tx and POST /api/invoices/submit
+ * (agent pays gas for register; Billie writes text records after confirm).
  *
- *   BILLIE_SUBMIT_INVOICE=1 BILLIE_SKIP_GAS_ESTIMATE=1 pnpm agent:invoice -- agentinvoice3.eth inv-05 50 USDC
- *
- * Optional: BILLIE_TX_GAS, BILLIE_TX_MAX_FEE_GWEI, BILLIE_TX_PRIORITY_FEE_GWEI.
+ * Optional: BILLIE_TX_GAS, BILLIE_TX_MAX_FEE_GWEI, BILLIE_TX_PRIORITY_FEE_GWEI,
+ * BILLIE_SKIP_GAS_ESTIMATE=1.
  */
 import { createAgentkitClient } from "@worldcoin/agentkit";
 import {
@@ -44,7 +43,7 @@ function parseArgs(argv: string[]): {
   const [domain, label, amount, currency] = args;
   if (!domain || !label || !amount || !currency) {
     throw new Error(
-      "Usage: pnpm agent:invoice -- <domain.eth> <label> <amount> <currency>",
+      "Usage: pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency>",
     );
   }
   return { domain, label, amount, currency };
@@ -68,7 +67,7 @@ async function main() {
   const { domain, label, amount, currency } = parsed;
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
-  console.log(`Root domain: ${domain}`);
+  console.log(`Namespace: ${domain}`);
 
   const agentkit = createAgentkitClient({
     signer: {
@@ -136,7 +135,7 @@ async function main() {
     signedTx = await wallet.signTransaction(request);
   }
 
-  console.log("\nSubmitting signed tx...");
+  console.log("\nSubmitting signed register tx...");
   const submitRes = await agentkit.fetch(`${API_URL}/api/invoices/submit`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -144,7 +143,7 @@ async function main() {
       invoiceId: prepared.invoiceId,
       signedTx,
     }),
-    signal: AbortSignal.timeout(TIMEOUT_MS + 60_000),
+    signal: AbortSignal.timeout(TIMEOUT_MS + 90_000),
   });
   const submitted = await submitRes.json().catch(() => null);
   console.log(`Submit status: ${submitRes.status}`);

@@ -65,6 +65,6 @@ Full checklist: [README.md](./README.md#stage-1-verification-checklist).
 
 ## Follow-ups (later stages)
 
-1. Invoice subdomains on the same Ethereum Sepolia ENSv2 root (roles / subregistry / resolver); replace stubs with real calldata; write text records including `billie.attestation` (service EIP-712 sig already produced at prepare).
-2. Web app: dashboard + public validate form.
+1. **Parent namespace model:** Billie owns parent + UserRegistry; agents claim namespaces; invoices under agent UserRegistry with ENS text records via shared PermissionedResolver.
+2. Web app: dashboard + public validate form (read ENS texts).
 3. Stronger persistence/indexer.

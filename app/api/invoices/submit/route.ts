@@ -10,6 +10,10 @@ import {
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
 import { createSepoliaPublicClient } from "@/lib/ens";
+import {
+  InvoiceTextsWriteError,
+  writeInvoiceTextRecords,
+} from "@/lib/invoice-texts";
 import { getInvoice, updateInvoice } from "@/lib/invoices";
 
 type SubmitInvoiceBody = {
@@ -24,8 +28,15 @@ const CONFIRM_TIMEOUT_MS = Number(process.env.INVOICE_CONFIRM_TIMEOUT_MS ?? 45_0
  *
  * Body: { "invoiceId": "inv_…", "signedTx": "0x…" }
  *
- * Verifies AgentKit + invoice ownership + tx matches prepare payload,
- * broadcasts to Ethereum Sepolia, then waits briefly for 1 confirmation.
+ * Billie broadcasts the agent-signed register, waits for confirm, then writes
+ * billie.* text records via PermissionedResolver.multicall (Billie pays gas).
+ *
+ * Differentiated error codes:
+ * - register_invalid / register_mismatch / …
+ * - register_broadcast_failed
+ * - register_reverted
+ * - register_confirm_timeout
+ * - texts_no_resolver / texts_broadcast_failed / texts_reverted
  */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
@@ -42,25 +53,34 @@ export async function POST(request: Request) {
 
   if (typeof body.invoiceId !== "string" || !body.invoiceId) {
     return NextResponse.json(
-      { error: "Missing required field: invoiceId" },
+      { error: "Missing required field: invoiceId", code: "invalid_body" },
       { status: 400 },
     );
   }
   if (typeof body.signedTx !== "string" || !body.signedTx.startsWith("0x")) {
     return NextResponse.json(
-      { error: "Missing required field: signedTx (hex)" },
+      {
+        error: "Missing required field: signedTx (hex)",
+        code: "invalid_body",
+      },
       { status: 400 },
     );
   }
 
   const invoice = getInvoice(body.invoiceId);
   if (!invoice) {
-    return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+    return NextResponse.json(
+      { error: "Invoice not found", code: "invoice_not_found" },
+      { status: 404 },
+    );
   }
 
   if (invoice.agentAddress !== agent.address.toLowerCase()) {
     return NextResponse.json(
-      { error: "Invoice does not belong to this agent" },
+      {
+        error: "Invoice does not belong to this agent",
+        code: "invoice_forbidden",
+      },
       { status: 403 },
     );
   }
@@ -69,6 +89,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Invoice is not in prepared state",
+        code: "invoice_not_prepared",
         status: invoice.status,
         txHash: invoice.txHash,
       },
@@ -89,6 +110,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Invalid signed transaction",
+        code: "register_invalid",
         detail: error instanceof Error ? error.message : "Recover failed",
       },
       { status: 400 },
@@ -99,6 +121,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Signed tx from address does not match agent",
+        code: "register_signer_mismatch",
         from,
         agentAddress: agent.address,
       },
@@ -115,6 +138,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Could not parse signed transaction",
+        code: "register_invalid",
         detail: error instanceof Error ? error.message : "Parse failed",
       },
       { status: 400 },
@@ -125,6 +149,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Signed tx chainId must be Ethereum Sepolia (11155111)",
+        code: "register_chain_mismatch",
         chainId: parsed.chainId,
       },
       { status: 400 },
@@ -135,6 +160,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Signed tx `to` does not match prepared invoice",
+        code: "register_to_mismatch",
         expected: invoice.tx.to,
         actual: parsed.to,
       },
@@ -147,6 +173,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: "Signed tx `data` does not match prepared invoice calldata",
+        code: "register_data_mismatch",
       },
       { status: 400 },
     );
@@ -155,7 +182,10 @@ export async function POST(request: Request) {
   const value = parsed.value ?? BigInt(0);
   if (value !== BigInt(0)) {
     return NextResponse.json(
-      { error: "Signed tx value must be 0 for invoice registration" },
+      {
+        error: "Signed tx value must be 0 for invoice registration",
+        code: "register_value_nonzero",
+      },
       { status: 400 },
     );
   }
@@ -172,73 +202,148 @@ export async function POST(request: Request) {
   } catch (error) {
     updateInvoice(invoice.id, {
       status: "failed",
+      errorCode: "register_broadcast_failed",
       error: error instanceof Error ? error.message : "Broadcast failed",
     });
     return NextResponse.json(
       {
-        error: "Failed to broadcast transaction to Sepolia",
+        ok: false,
+        invoiceId: invoice.id,
+        fullName: invoice.fullName,
+        error: "Failed to broadcast register transaction to Sepolia",
+        code: "register_broadcast_failed",
         detail: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 502 },
     );
   }
 
-  updateInvoice(invoice.id, { status: "submitted", txHash });
+  updateInvoice(invoice.id, {
+    status: "submitted",
+    txHash,
+    errorCode: undefined,
+    error: undefined,
+  });
 
+  let receipt;
   try {
-    const receipt = await client.waitForTransactionReceipt({
+    receipt = await client.waitForTransactionReceipt({
       hash: txHash,
       timeout: CONFIRM_TIMEOUT_MS,
     });
-
-    if (receipt.status === "reverted") {
-      const failed = updateInvoice(invoice.id, {
-        status: "failed",
-        txHash,
-        error: "Transaction reverted on-chain",
-      });
-      return NextResponse.json(
-        {
-          ok: false,
-          invoiceId: failed.id,
-          status: failed.status,
-          txHash,
-          fullName: failed.fullName,
-          error: failed.error,
-          stubCalldata: failed.stubCalldata,
-        },
-        { status: 502 },
-      );
-    }
-
-    const confirmed = updateInvoice(invoice.id, {
-      status: "confirmed",
-      txHash,
-    });
-
-    return NextResponse.json({
-      ok: true,
-      invoiceId: confirmed.id,
-      status: confirmed.status,
-      txHash,
-      fullName: confirmed.fullName,
-      blockNumber: receipt.blockNumber.toString(),
-      stubCalldata: confirmed.stubCalldata,
-    });
   } catch {
-    // Mining can be slow on Sepolia — return hash so the client can watch it.
     const submitted = updateInvoice(invoice.id, {
       status: "submitted",
       txHash,
+      errorCode: "register_confirm_timeout",
+      error: "Register broadcast ok; confirmation timed out",
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        invoiceId: submitted.id,
+        status: submitted.status,
+        txHash,
+        fullName: submitted.fullName,
+        error: submitted.error,
+        code: "register_confirm_timeout",
+        hint: "Check the register tx on Sepolia; texts were not written yet",
+      },
+      { status: 504 },
+    );
+  }
+
+  if (receipt.status === "reverted") {
+    const failed = updateInvoice(invoice.id, {
+      status: "failed",
+      txHash,
+      errorCode: "register_reverted",
+      error: "Register transaction reverted on-chain",
+    });
+    return NextResponse.json(
+      {
+        ok: false,
+        invoiceId: failed.id,
+        status: failed.status,
+        txHash,
+        fullName: failed.fullName,
+        error: failed.error,
+        code: "register_reverted",
+      },
+      { status: 502 },
+    );
+  }
+
+  // Domain exists on-chain. Texts are a separate Billie-paid step.
+  const confirmed = updateInvoice(invoice.id, {
+    status: "confirmed",
+    txHash,
+    errorCode: undefined,
+    error: undefined,
+  });
+
+  try {
+    const written = await writeInvoiceTextRecords({
+      fullName: confirmed.fullName,
+      texts: confirmed.texts,
+    });
+    updateInvoice(invoice.id, {
+      textsWritten: true,
+      textsTxHash: written.txHash,
+      textsError: undefined,
     });
     return NextResponse.json({
       ok: true,
-      invoiceId: submitted.id,
-      status: submitted.status,
+      invoiceId: confirmed.id,
+      status: "confirmed",
       txHash,
-      fullName: submitted.fullName,
-      stubCalldata: submitted.stubCalldata,
-      hint: "Broadcast ok; confirmation timed out — check tx on Sepolia explorer",
+      fullName: confirmed.fullName,
+      blockNumber: receipt.blockNumber.toString(),
+      texts: confirmed.texts,
+      textsWritten: true,
+      textsTxHash: written.txHash,
+      stubCalldata: confirmed.stubCalldata,
     });
+  } catch (error) {
+    const textsCode =
+      error instanceof InvoiceTextsWriteError
+        ? error.code === "no_resolver"
+          ? "texts_no_resolver"
+          : error.code === "reverted"
+            ? "texts_reverted"
+            : "texts_broadcast_failed"
+        : "texts_write_failed";
+    const textsTxHash =
+      error instanceof InvoiceTextsWriteError ? error.txHash : undefined;
+    const textsError =
+      error instanceof Error ? error.message : "Failed to write text records";
+
+    updateInvoice(invoice.id, {
+      textsWritten: false,
+      textsTxHash,
+      textsError,
+      errorCode: textsCode,
+      error: textsError,
+    });
+
+    return NextResponse.json(
+      {
+        ok: false,
+        invoiceId: confirmed.id,
+        status: "confirmed",
+        txHash,
+        fullName: confirmed.fullName,
+        blockNumber: receipt.blockNumber.toString(),
+        texts: confirmed.texts,
+        textsWritten: false,
+        textsTxHash,
+        textsError,
+        error: "Invoice domain registered, but Billie failed to write text records",
+        code: textsCode,
+        detail: textsError,
+        hint: "Domain exists on-chain without billie.* texts; retry texts later",
+      },
+      { status: 502 },
+    );
   }
 }
