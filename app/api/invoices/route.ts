@@ -8,6 +8,7 @@ import { checkBillieParentStatus } from "@/lib/billie-parent";
 import {
   getLinkedDomainByAgent,
   matchLinkedNamespace,
+  normalizeDomainName,
 } from "@/lib/domains";
 import {
   formatAtomicAmount,
