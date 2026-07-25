@@ -83,27 +83,41 @@ Settlement fields are written as ENS texts after submit. A few of them:
 
 ## Quick start guide
 
-Use `127.0.0.1`, not `localhost` (the dev server binds IPv4 only).
+Use `127.0.0.1`, not `localhost` (the dev server binds IPv4 only). Copy `.env.example` → `.env` and fill the vars listed per section below.
 
-### 1. Billie setup
+### 1. Billie setup (server)
+
+**Env to run the Billie server** (local or Vercel):
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `BILLIE_PRIVATE_KEY` | yes | Service key; must own `BILLIE_PARENT_NAME` on Sepolia ENSv2; pays gas + signs attestations |
+| `BILLIE_PARENT_NAME` | yes | Parent ENS, e.g. `parent.eth` |
+| `BILLIE_INVOICE_RESOLVER` | yes | Shared PermissionedResolver for invoice texts (`pnpm ops:invoice-resolver`) |
+| `BILLIE_PAYMENT_ROUTER` | yes | PaymentRouter address (`pnpm ops:payment-router`) |
+| `BILLIE_DB_PATH` | yes on Vercel | SQLite path. Local default `data/billie.sqlite`. On Vercel use `/tmp/billie.sqlite` (ephemeral) |
+| `WORLD_CHAIN_RPC_URL` | recommended | World Chain RPC for AgentBook (avoid flaky public RPC) |
+| `ETHEREUM_SEPOLIA_RPC_URL` | recommended | Sepolia RPC for ENSv2 + txs |
+
+One-time ops before the server can provision agents / write invoices:
 
 1. Manually register the parent name on Sepolia ENSv2 (e.g. `parent.eth`).
-2. Set `BILLIE_PRIVATE_KEY` and `BILLIE_PARENT_NAME` in `.env`.
+2. Set at least `BILLIE_PRIVATE_KEY` and `BILLIE_PARENT_NAME` in `.env`.
 3. Deploy UserRegistry, `setParent`, `setSubregistry`:
 
 ```bash
 pnpm ops:parent-registry
 ```
 
-4. Deploy the invoice resolver, then add `BILLIE_INVOICE_RESOLVER` to `.env`:
+4. Deploy the invoice resolver, then set `BILLIE_INVOICE_RESOLVER`:
 
 ```bash
 pnpm ops:invoice-resolver
 ```
 
-5. Deploy the Billie PaymentRouter, then add `BILLIE_PAYMENT_ROUTER` to `.env`.
+5. Deploy the Billie PaymentRouter, then set `BILLIE_PAYMENT_ROUTER`.
 
-   Set `ETHERSCAN_API_KEY` if you want the contract verified and readable on Etherscan.
+   Optional for verify: `ETHERSCAN_API_KEY`.
 
 ```bash
 pnpm ops:payment-router
@@ -116,7 +130,15 @@ pnpm install
 pnpm dev --hostname 127.0.0.1 --port 3000
 ```
 
-### 2. Agent setup
+### 2. Agent setup (scripts)
+
+**Env for agent smoke scripts** (`pnpm agent:*` / `pnpm invoice:status`):
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `AGENT_PRIVATE_KEY` | yes | Agent wallet (register in AgentBook first) |
+| `BILLIE_API_URL` | if remote | Billie base URL. Default `http://127.0.0.1:3000`. Point at your Vercel URL when not using local `pnpm dev` |
+| `BILLIE_SUBMIT_INVOICE` | for broadcast | Set to `1` so `pnpm agent:invoice` also POSTs `/api/invoices/submit` |
 
 1. Set `AGENT_PRIVATE_KEY` in `.env`.
 2. Register the agent in World AgentBook (confirm with your World ID):
@@ -154,7 +176,9 @@ pnpm invoice:status agent inv
 
 ### 3. Pay invoice using the dashboard
 
-1. Open http://127.0.0.1:3000
+**Env:** none on the client. The dashboard talks to the same Billie server from §1 (local or via `BILLIE_API_URL` / deployed URL). Payer only needs a wallet on Ethereum Sepolia with USDC.
+
+1. Open http://127.0.0.1:3000 (or your Vercel deployment)
 2. Choose agent and domain to see invoices
 3. Open an invoice
 4. Connect a wallet, approve, and pay the Sepolia USDC amount on the invoice
