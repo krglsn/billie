@@ -23,13 +23,13 @@ export const ENS_V2_VERIFIABLE_FACTORY_SEPOLIA =
 export const ENS_V2_USER_REGISTRY_IMPL_SEPOLIA =
   "0x0F99e7Ea74903AfCB7224d0354fD7428A6f92917" as const;
 
-const Status = {
+export const Status = {
   AVAILABLE: 0,
   RESERVED: 1,
   REGISTERED: 2,
 } as const;
 
-const ensV2RegistryAbi = [
+export const ensV2RegistryAbi = [
   {
     type: "function",
     name: "getState",
@@ -192,9 +192,56 @@ export async function getEnsV2OwnerOnSepolia(name: string): Promise<{
   };
 }
 
-/**
- * Verify that `agentAddress` owns `name` on Ethereum Sepolia ENSv2.
- */
+/** Read label state from any ENSv2 PermissionedRegistry / UserRegistry. */
+export async function getRegistryLabelState(
+  registry: Address,
+  label: string,
+): Promise<{
+  status: number;
+  owner: Address | null;
+  tokenId: bigint;
+  resource: bigint;
+  expiry: bigint;
+  resolver: Address;
+  subregistry: Address | null;
+}> {
+  const client = getSepoliaClient();
+  const labelHash = BigInt(labelHashOf(label));
+  const [state, resolver, subregistry] = await Promise.all([
+    client.readContract({
+      address: registry,
+      abi: ensV2RegistryAbi,
+      functionName: "getState",
+      args: [labelHash],
+    }),
+    client.readContract({
+      address: registry,
+      abi: ensV2RegistryAbi,
+      functionName: "getResolver",
+      args: [label],
+    }),
+    client.readContract({
+      address: registry,
+      abi: ensV2RegistryAbi,
+      functionName: "getSubregistry",
+      args: [label],
+    }),
+  ]);
+
+  const registered =
+    state.status === Status.REGISTERED && state.latestOwner !== zeroAddress;
+
+  return {
+    status: state.status,
+    owner: registered ? state.latestOwner : null,
+    tokenId: state.tokenId,
+    resource: state.resource,
+    expiry: state.expiry,
+    resolver,
+    subregistry: subregistry === zeroAddress ? null : subregistry,
+  };
+}
+
 export async function verifyAgentOwnsDomain(
   name: string,
   agentAddress: string,

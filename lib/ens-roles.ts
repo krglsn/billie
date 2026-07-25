@@ -31,6 +31,19 @@ export const BILLIE_PARENT_REGISTRY_ROLES =
   ROLE_UPGRADE |
   ROLE_UPGRADE_ADMIN;
 
+/**
+ * Roles for Billie as admin of a newly deployed agent UserRegistry
+ * (Billie deploys + setParent, then grants ROLE_REGISTRAR to the agent).
+ */
+export const BILLIE_AGENT_REGISTRY_ADMIN_ROLES = BILLIE_PARENT_REGISTRY_ROLES;
+
+/** Roles granted to the agent on their UserRegistry (invoice minting). */
+export const AGENT_NAMESPACE_REGISTRAR_ROLES =
+  ROLE_REGISTRAR | ROLE_REGISTRAR_ADMIN;
+
+/** Roles granted to the agent as owner of `{label}.parent.eth`. */
+export const AGENT_NAMESPACE_NAME_ROLES = ROLE_SET_RESOLVER | ROLE_RENEW;
+
 export const enhancedAccessControlAbi = [
   {
     type: "function",
