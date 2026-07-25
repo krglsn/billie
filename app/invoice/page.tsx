@@ -139,7 +139,7 @@ function InvoiceDetail() {
     : [];
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       <Link
         href="/"
         className="text-sm font-medium text-accent transition hover:text-accent-hover"
@@ -210,7 +210,7 @@ function InvoiceDetail() {
                     <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
                       {label}
                     </th>
-                    <td className="px-4 py-3 font-mono text-xs break-all sm:text-sm">
+                    <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
                       {value ?? "—"}
                     </td>
                   </tr>
