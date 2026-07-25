@@ -223,7 +223,7 @@ export async function GET(request: Request) {
       attestation: {
         ok: attestation.ok,
         label: attestation.ok
-          ? "verified attestation"
+          ? "verified issuer"
           : "unverified issuer",
         reason: attestation.ok ? null : attestation.reason,
         expectedSigner:
