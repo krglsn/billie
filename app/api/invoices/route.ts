@@ -25,7 +25,7 @@ type PrepareInvoiceBody = {
  * Body: { "label": "inv-01", "amount": "100", "currency": "USDC", "domain"?: "billie.eth" }
  *
  * Checks: AgentKit human-backed, agent has claimed the root domain, label free on Billie.
- * Returns stub attestation + calldata for the agent to sign.
+ * Returns Billie EIP-712 attestation (off-chain; later ENS text `billie.attestation`) + register calldata.
  */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
@@ -123,13 +123,24 @@ export async function POST(request: Request) {
   }
 
   const invoiceId = createInvoiceId();
-  const prepared = await buildInvoiceRegisterTx({
-    invoiceId,
-    label,
-    amount,
-    currency,
-    domain,
-  });
+  let prepared;
+  try {
+    prepared = await buildInvoiceRegisterTx({
+      invoiceId,
+      label,
+      amount,
+      currency,
+      domain,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "Failed to prepare invoice attestation",
+        detail: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 },
+    );
+  }
 
   const invoice = savePreparedInvoice({
     id: invoiceId,

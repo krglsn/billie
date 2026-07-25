@@ -35,7 +35,7 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 | `GET` | `/api/health` | public | liveness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
 | `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
-| `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + stub attestation |
+| `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
 | `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
 
 `/api/invoices` requires a previously linked domain for the agent.
@@ -65,7 +65,7 @@ Note: names registered only in classic ENSv1 will not resolve here. Owner must b
 ### Invoice prepare + submit (minimal)
 
 1. Agent has a linked root domain.
-2. `POST /api/invoices` with `{ "label": "inv-01", "amount": "100", "currency": "USDC" }` → stub attestation + `register` calldata (no text records).
+2. `POST /api/invoices` with `{ "label": "inv-01", "amount": "100", "currency": "USDC" }` → Billie EIP-712 `attestation` (off-chain; later ENS text `billie.attestation`) + `register` calldata (no text records yet). Requires `BILLIE_PRIVATE_KEY`.
 3. Agent signs the returned tx on Sepolia.
 4. `POST /api/invoices/submit` with `{ "invoiceId", "signedTx" }` → Billie verifies match, broadcasts, waits ~45s for 1 confirmation (or returns `submitted` + hash on timeout).
 

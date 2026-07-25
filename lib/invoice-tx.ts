@@ -1,10 +1,8 @@
+import { encodeFunctionData, type Address, type Hex } from "viem";
 import {
-  encodeFunctionData,
-  keccak256,
-  toHex,
-  type Address,
-  type Hex,
-} from "viem";
+  signInvoiceAttestation,
+  type InvoiceAttestation,
+} from "@/lib/billie-attestation";
 import {
   ethLabelFromName,
   getEthRegistryAddress,
@@ -38,31 +36,9 @@ export type PreparedInvoiceTx = {
   value: "0";
   chainId: "eip155:11155111";
   stubCalldata: boolean;
-  attestation: Hex;
+  /** Off-chain for now; later ENS text `billie.attestation`. */
+  attestation: InvoiceAttestation;
 };
-
-/**
- * Stub Billie attestation over the invoice payload.
- * Replace with a real service signature later.
- */
-export function stubAttestation(payload: {
-  invoiceId: string;
-  fullName: string;
-  amount: string;
-  currency: string;
-  agentAddress: string;
-  humanId: string;
-}): Hex {
-  const canonical = [
-    payload.invoiceId,
-    payload.fullName,
-    payload.amount,
-    payload.currency,
-    payload.agentAddress.toLowerCase(),
-    payload.humanId.toLowerCase(),
-  ].join("|");
-  return keccak256(toHex(canonical));
-}
 
 export async function buildInvoiceRegisterTx(input: {
   invoiceId: string;
@@ -85,19 +61,19 @@ export async function buildInvoiceRegisterTx(input: {
       input.label,
       input.domain.agentAddress as Address,
       "0x0000000000000000000000000000000000000000",
-      // No text records in this MVP — leave resolver unset.
+      // Text records (incl. billie.attestation) come later — resolver unset.
       "0x0000000000000000000000000000000000000000",
       DEFAULT_ROLE_BITMAP,
       expiry,
     ],
   });
 
-  const attestation = stubAttestation({
+  const attestation = await signInvoiceAttestation({
     invoiceId: input.invoiceId,
     fullName,
     amount: input.amount,
     currency: input.currency,
-    agentAddress: input.domain.agentAddress,
+    agentAddress: input.domain.agentAddress as Address,
     humanId: input.domain.humanId,
   });
 

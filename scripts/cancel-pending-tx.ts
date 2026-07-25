@@ -68,7 +68,7 @@ async function main() {
     process.exit(0);
   }
 
-  const gas = 21_000n;
+  const gas = BigInt(21_000);
   const maxFeePerGas = parseGwei(MAX_FEE_GWEI);
   const maxPriorityFeePerGas = parseGwei(TIP_GWEI);
   const cost = gas * maxFeePerGas;
@@ -87,7 +87,7 @@ async function main() {
 
   const hash = await wallet.sendTransaction({
     to: account.address,
-    value: 0n,
+    value: BigInt(0),
     nonce,
     gas,
     maxFeePerGas,

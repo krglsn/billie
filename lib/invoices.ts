@@ -1,4 +1,5 @@
 import { randomBytes } from "crypto";
+import type { InvoiceAttestation } from "@/lib/billie-attestation";
 import type { LinkedDomain } from "@/lib/domains";
 
 export type InvoiceStatus =
@@ -17,7 +18,8 @@ export type InvoiceRecord = {
   agentAddress: string;
   humanId: string;
   status: InvoiceStatus;
-  attestation: `0x${string}`;
+  /** Off-chain Billie sig; later ENS text `billie.attestation`. */
+  attestation: InvoiceAttestation;
   chainId: "eip155:11155111";
   tx: {
     to: `0x${string}`;
@@ -74,7 +76,7 @@ export function savePreparedInvoice(input: {
   amount: string;
   currency: string;
   domain: LinkedDomain;
-  attestation: `0x${string}`;
+  attestation: InvoiceAttestation;
   tx: InvoiceRecord["tx"];
   stubCalldata: boolean;
 }): InvoiceRecord {
