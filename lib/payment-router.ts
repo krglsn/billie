@@ -15,6 +15,28 @@ import {
 } from "@/lib/ens";
 import { INVOICE_TEXT_KEYS } from "@/lib/invoice-texts";
 
+const ROUTER_READ_ATTEMPTS = 4;
+const ROUTER_READ_BASE_DELAY_MS = 250;
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Retry flaky Sepolia eth_call / RPC errors. */
+async function withRpcRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < ROUTER_READ_ATTEMPTS; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt === ROUTER_READ_ATTEMPTS - 1) break;
+      await sleep(ROUTER_READ_BASE_DELAY_MS * 2 ** attempt);
+    }
+  }
+  throw lastError;
+}
+
 export const paymentRouterAbi = [
   {
     type: "constructor",
@@ -144,12 +166,14 @@ export type RouterCheckResult = {
 export async function readRouterPaid(node: Hex): Promise<boolean | null> {
   const router = getBilliePaymentRouterAddress();
   if (!router) return null;
-  const client = createSepoliaPublicClient();
-  return client.readContract({
-    address: router,
-    abi: paymentRouterAbi,
-    functionName: "paid",
-    args: [node],
+  return withRpcRetry(async () => {
+    const client = createSepoliaPublicClient();
+    return client.readContract({
+      address: router,
+      abi: paymentRouterAbi,
+      functionName: "paid",
+      args: [node],
+    });
   });
 }
 
@@ -158,29 +182,31 @@ export async function checkInvoiceOnRouter(
 ): Promise<RouterCheckResult | null> {
   const router = getBilliePaymentRouterAddress();
   if (!router) return null;
-  const client = createSepoliaPublicClient();
-  const [payable_, token, paymentAddress, amount, status, reason] =
-    await client.readContract({
+  return withRpcRetry(async () => {
+    const client = createSepoliaPublicClient();
+    const [payable_, token, paymentAddress, amount, status, reason] =
+      await client.readContract({
+        address: router,
+        abi: paymentRouterAbi,
+        functionName: "checkInvoice",
+        args: [node],
+      });
+    const paidOnRouter = await client.readContract({
       address: router,
       abi: paymentRouterAbi,
-      functionName: "checkInvoice",
+      functionName: "paid",
       args: [node],
     });
-  const paidOnRouter = await client.readContract({
-    address: router,
-    abi: paymentRouterAbi,
-    functionName: "paid",
-    args: [node],
+    return {
+      payable: payable_,
+      token,
+      paymentAddress,
+      amount: amount.toString(),
+      ensStatus: status,
+      reason,
+      paidOnRouter,
+    };
   });
-  return {
-    payable: payable_,
-    token,
-    paymentAddress,
-    amount: amount.toString(),
-    ensStatus: status,
-    reason,
-    paidOnRouter,
-  };
 }
 
 /** Computed payment status for API responses. */

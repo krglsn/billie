@@ -48,21 +48,55 @@ function InvoiceDetail() {
     }
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(
-        `/api/invoices/resolve?name=${encodeURIComponent(name)}`,
-      );
-      const body = (await res.json()) as ResolveResponse;
-      if (!res.ok) {
-        throw new Error(body.error ?? `Resolve failed (${res.status})`);
+
+    const maxAttempts = 3;
+    let lastError: string | null = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await fetch(
+          `/api/invoices/resolve?name=${encodeURIComponent(name)}`,
+        );
+        const body = (await res.json()) as ResolveResponse;
+        if (!res.ok) {
+          const msg = body.error ?? `Resolve failed (${res.status})`;
+          const retryable =
+            res.status === 502 ||
+            msg === "Failed to read PaymentRouter" ||
+            msg.includes("PaymentRouter");
+          if (retryable && attempt < maxAttempts) {
+            lastError = msg;
+            await new Promise((r) => setTimeout(r, 400 * attempt));
+            continue;
+          }
+          throw new Error(msg);
+        }
+        setData(body);
+        setError(null);
+        setLoading(false);
+        return;
+      } catch (e) {
+        const msg =
+          e instanceof Error ? e.message : "Failed to resolve invoice";
+        lastError = msg;
+        const retryable =
+          msg === "Failed to read PaymentRouter" ||
+          msg.includes("PaymentRouter") ||
+          msg.includes("fetch");
+        if (retryable && attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 400 * attempt));
+          continue;
+        }
+        setError(msg);
+        setData(null);
+        setLoading(false);
+        return;
       }
-      setData(body);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to resolve invoice");
-      setData(null);
-    } finally {
-      setLoading(false);
     }
+
+    setError(lastError ?? "Failed to resolve invoice");
+    setData(null);
+    setLoading(false);
   }, [name]);
 
   useEffect(() => {
