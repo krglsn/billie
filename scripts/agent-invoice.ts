@@ -23,7 +23,8 @@ function parseArgs(argv: string[]): {
   amount: string;
   currency: string;
 } {
-  const args = argv.slice(2);
+  // pnpm forwards a literal "--" when invoked as `pnpm agent:invoice -- …`
+  const args = argv.slice(2).filter((a) => a !== "--");
   if (args.length === 0) {
     throw new Error(
       "Usage: pnpm agent:invoice -- [domain.eth] <label> [amount] [currency]",
@@ -112,12 +113,13 @@ async function main() {
     transport: http(process.env.ETHEREUM_SEPOLIA_RPC_URL),
   });
 
-  const signedTx = await wallet.signTransaction({
+  // Fill nonce / gas / EIP-1559 fees — bare signTransaction cannot infer type.
+  const request = await wallet.prepareTransactionRequest({
     to: prepared.tx.to,
     data: prepared.tx.data,
     value: BigInt(prepared.tx.value ?? 0),
-    chainId: sepolia.id,
   });
+  const signedTx = await wallet.signTransaction(request);
 
   console.log("\nSubmitting signed tx...");
   const submitRes = await agentkit.fetch(`${API_URL}/api/invoices/submit`, {
