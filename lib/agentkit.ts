@@ -11,9 +11,9 @@ import { lookupHumanId } from "@/lib/agentbook";
 
 const WORLD_CHAIN = "eip155:480";
 const BASE = "eip155:8453";
-const BASE_SEPOLIA = "eip155:84532";
+const ETHEREUM_SEPOLIA = "eip155:11155111";
 
-const SUPPORTED_NETWORKS = [BASE, BASE_SEPOLIA, WORLD_CHAIN] as const;
+const SUPPORTED_NETWORKS = [BASE, ETHEREUM_SEPOLIA, WORLD_CHAIN] as const;
 
 export type HumanBackedAgent = {
   address: string;

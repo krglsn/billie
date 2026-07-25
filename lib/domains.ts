@@ -10,7 +10,21 @@ export type LinkedDomain = {
   linkedAt: string;
 };
 
-const linkedByName = new Map<string, LinkedDomain>();
+/**
+ * In-memory store shaped as:
+ *   humanId → agentAddress → domain record
+ *
+ * Plus indexes for uniqueness / invoice lookups:
+ *   - by domain name (global uniqueness)
+ *   - by agent address (one linked root domain per agent)
+ */
+const byHumanId = new Map<string, Map<string, LinkedDomain>>();
+const byName = new Map<string, LinkedDomain>();
+const byAgentAddress = new Map<string, LinkedDomain>();
+
+function normalizeAddress(address: string): string {
+  return address.toLowerCase();
+}
 
 /** Normalize to lowercase; ensure a single trailing `.eth`. */
 export function normalizeDomainName(input: string): string {
@@ -37,25 +51,69 @@ export function normalizeDomainName(input: string): string {
 }
 
 export function getLinkedDomain(name: string): LinkedDomain | undefined {
-  return linkedByName.get(name);
+  return byName.get(name);
 }
 
 export function isDomainLinked(name: string): boolean {
-  return linkedByName.has(name);
+  return byName.has(name);
+}
+
+export function getLinkedDomainByAgent(
+  agentAddress: string,
+): LinkedDomain | undefined {
+  return byAgentAddress.get(normalizeAddress(agentAddress));
+}
+
+export function getLinkedDomainsByHuman(humanId: string): LinkedDomain[] {
+  const agents = byHumanId.get(humanId);
+  if (!agents) return [];
+  return [...agents.values()];
+}
+
+/**
+ * Snapshot of the nested mapping humanId → agentAddress → domain name.
+ */
+export function getHumanAgentDomainMap(): Record<
+  string,
+  Record<string, string>
+> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const [humanId, agents] of byHumanId) {
+    out[humanId] = {};
+    for (const [agentAddress, record] of agents) {
+      out[humanId][agentAddress] = record.name;
+    }
+  }
+  return out;
 }
 
 export function linkDomain(
   input: Omit<LinkedDomain, "linkedAt">,
 ): LinkedDomain {
-  const existing = linkedByName.get(input.name);
-  if (existing) {
+  const agentKey = normalizeAddress(input.agentAddress);
+
+  if (byName.has(input.name)) {
     throw new Error("Domain is already registered on Billie");
+  }
+
+  if (byAgentAddress.has(agentKey)) {
+    throw new Error("Agent already has a linked domain on Billie");
   }
 
   const record: LinkedDomain = {
     ...input,
+    agentAddress: agentKey,
     linkedAt: new Date().toISOString(),
   };
-  linkedByName.set(input.name, record);
+
+  let agents = byHumanId.get(input.humanId);
+  if (!agents) {
+    agents = new Map();
+    byHumanId.set(input.humanId, agents);
+  }
+  agents.set(agentKey, record);
+  byName.set(input.name, record);
+  byAgentAddress.set(agentKey, record);
+
   return record;
 }

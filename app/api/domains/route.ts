@@ -4,6 +4,7 @@ import {
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
 import {
+  getLinkedDomainByAgent,
   isDomainLinked,
   linkDomain,
   normalizeDomainName,
@@ -62,6 +63,18 @@ export async function POST(request: Request) {
       {
         error: "Domain is already registered on Billie",
         name,
+      },
+      { status: 409 },
+    );
+  }
+
+  const existingForAgent = getLinkedDomainByAgent(agent.address);
+  if (existingForAgent) {
+    return NextResponse.json(
+      {
+        error: "Agent already has a linked domain on Billie",
+        domain: existingForAgent.name,
+        agentAddress: agent.address,
       },
       { status: 409 },
     );

@@ -13,8 +13,8 @@ Human-backed agent invoice API (Stage 1).
 
 | Asset | Network | CAIP-2 |
 |-------|---------|--------|
-| Root ENS domain | Ethereum Sepolia | `eip155:11155111` |
-| Invoice subdomain | Base Sepolia | `eip155:84532` |
+| Root ENS domain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
+| Invoice subdomain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
 | AgentBook lookup | World Chain | `eip155:480` |
 
 ## Setup
@@ -34,9 +34,9 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 |--------|------|------|-------|
 | `GET` | `/api/health` | public | liveness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
-| `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENS name |
+| `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
 
-`/api/invoices` is **not** in Stage 1 yet (planned for Base Sepolia).
+`/api/invoices` is **not** in Stage 1 yet (same Sepolia ENSv2 root when added).
 
 Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
 
@@ -46,20 +46,20 @@ Register the `.eth` name yourself on **Ethereum Sepolia ENSv2** (`app.ens.dev`) 
 
 1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional) + AgentKit.
 2. API verifies human-backed identity (AgentBook on World Chain).
-3. If the name is already linked in Billie → `409`.
+3. If the name is already linked, or this agent already has a domain → `409`.
 4. API reads ENSv2 `ETHRegistry.getState(labelhash)` on Sepolia and requires `owner == agentAddress`.
-5. On success, stores mapping `humanId → agentAddress → domain` and returns it.
+5. On success, stores `humanId → agentAddress → domain` (plus indexes by name / agent) and returns the mapping.
 
 | Status | Meaning |
 |--------|---------|
 | `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
-| `409` | domain already linked on Billie |
+| `409` | domain already linked, or agent already has a linked domain |
 | `404` | name not registered on Sepolia ENSv2 |
 | `403` | ENSv2 owner ≠ agent address |
 | `502` | Sepolia RPC / lookup failure |
 | `200` | linked; response includes `mapping` |
 
-Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet (not a different registrar/proxy address).
+Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet.
 
 ---
 
@@ -114,7 +114,7 @@ pnpm agent:me
 
 ### 6. Domain claim
 
-1. On Ethereum Sepolia, register `myagent.eth` to the **agent** address (commit → wait → register).
+1. On Ethereum Sepolia ENSv2 (`app.ens.dev`), register `myagent.eth` to the **agent** address.
 2. Link it:
 
 ```bash
@@ -122,7 +122,7 @@ pnpm agent:domain -- myagent
 # → 200 + mapping { humanId, agentAddress, domain }
 
 pnpm agent:domain -- myagent
-# → 409 already registered on Billie
+# → 409 domain already linked (or agent already has a domain)
 ```
 
 ### Pass criteria
@@ -130,8 +130,9 @@ pnpm agent:domain -- myagent
 - [ ] `/api/health` → 200
 - [ ] `/api/me` and `/api/domains` without AgentKit → 402
 - [ ] Registered agent → `/api/me` 200 + `humanId`
-- [ ] Agent-owned Sepolia ENS → `/api/domains` 200 + mapping
+- [ ] Agent-owned Sepolia ENSv2 name → `/api/domains` 200 + mapping
 - [ ] Same name twice → 409
+- [ ] Second domain for same agent → 409
 - [ ] Wrong owner / missing ENS → 403 / 404
 
 See [PLAN.md](./PLAN.md) for scope and follow-ups.
