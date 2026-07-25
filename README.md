@@ -7,7 +7,7 @@ Human-backed agent invoice API (Stage 1).
 - Next.js (App Router) + TypeScript
 - pnpm
 - World AgentKit (human-backed agent verification)
-- viem (Ethereum Sepolia ENS ownership checks)
+- viem (Ethereum Sepolia **ENSv2** ownership checks)
 
 ## Chains (target)
 
@@ -42,24 +42,24 @@ Protected routes return `402` with an AgentKit challenge when the `agentkit` hea
 
 ### Domain claim / link
 
-Register the `.eth` name yourself on **Ethereum Sepolia** with the agent wallet, then link it:
+Register the `.eth` name yourself on **Ethereum Sepolia ENSv2** (`app.ens.dev`) with the **same** wallet you use as the AgentKit agent, then link it:
 
 1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional) + AgentKit.
 2. API verifies human-backed identity (AgentBook on World Chain).
 3. If the name is already linked in Billie → `409`.
-4. API reads ENS owner on Sepolia (resolves NameWrapper when needed) and requires `owner == agentAddress`.
-5. Domain must be **wrapped** in the ENS NameWrapper (needed later for invoice subdomains).
-6. On success, stores mapping `humanId → agentAddress → domain` and returns it.
+4. API reads ENSv2 `ETHRegistry.getState(labelhash)` on Sepolia and requires `owner == agentAddress`.
+5. On success, stores mapping `humanId → agentAddress → domain` and returns it.
 
 | Status | Meaning |
 |--------|---------|
 | `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
 | `409` | domain already linked on Billie |
-| `404` | name not registered on Sepolia ENS |
-| `403` | ENS owner ≠ agent address |
-| `422` | domain is not wrapped in NameWrapper |
+| `404` | name not registered on Sepolia ENSv2 |
+| `403` | ENSv2 owner ≠ agent address |
 | `502` | Sepolia RPC / lookup failure |
 | `200` | linked; response includes `mapping` |
+
+Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet (not a different registrar/proxy address).
 
 ---
 

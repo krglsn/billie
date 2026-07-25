@@ -15,15 +15,14 @@ type ClaimDomainBody = {
 };
 
 /**
- * Claim / link an already-registered ENS root domain on Ethereum Sepolia.
+ * Claim / link an already-registered ENSv2 root domain on Ethereum Sepolia.
  *
  * Body: { "name": "billie.eth" }
  *
  * Checks:
  * - AgentKit human-backed identity (402 / 401 / 403)
  * - Domain not already linked in Billie (409)
- * - On-chain ENS owner on Sepolia matches the agent address (404 / 403 / 502)
- * - Domain is wrapped in the ENS NameWrapper (422) — required for invoice subdomains
+ * - On-chain ENSv2 ETHRegistry owner matches the agent address (404 / 403 / 502)
  */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
@@ -73,9 +72,10 @@ export async function POST(request: Request) {
     if (ownership.reason === "not_registered") {
       return NextResponse.json(
         {
-          error: "Domain is not registered on Ethereum Sepolia ENS",
+          error: "Domain is not registered on Ethereum Sepolia ENSv2",
           name,
           chainId: "eip155:11155111",
+          protocol: "ensv2",
         },
         { status: 404 },
       );
@@ -88,32 +88,19 @@ export async function POST(request: Request) {
           agentAddress: agent.address,
           ensOwner: ownership.owner,
           chainId: "eip155:11155111",
+          protocol: "ensv2",
         },
         { status: 403 },
       );
     }
     return NextResponse.json(
       {
-        error: "Failed to verify ENS ownership on Sepolia",
+        error: "Failed to verify ENSv2 ownership on Sepolia",
         name,
         detail: ownership.detail,
+        protocol: "ensv2",
       },
       { status: 502 },
-    );
-  }
-
-  if (!ownership.wrapped) {
-    return NextResponse.json(
-      {
-        error:
-          "Domain must be wrapped in the ENS NameWrapper before it can be linked",
-        name,
-        ensOwner: ownership.owner,
-        wrapped: false,
-        chainId: "eip155:11155111",
-        hint: "Wrap the name on Ethereum Sepolia, then retry the claim",
-      },
-      { status: 422 },
     );
   }
 
@@ -123,7 +110,9 @@ export async function POST(request: Request) {
     humanId: agent.humanId,
     chainId: ownership.chainId,
     ensOwner: ownership.owner,
-    wrapped: ownership.wrapped,
+    protocol: ownership.protocol,
+    tokenId: ownership.tokenId,
+    resolver: ownership.resolver,
   });
 
   return NextResponse.json({
@@ -134,8 +123,10 @@ export async function POST(request: Request) {
       domain: linked.name,
     },
     chainId: linked.chainId,
+    protocol: linked.protocol,
     ensOwner: linked.ensOwner,
-    wrapped: linked.wrapped,
+    tokenId: linked.tokenId,
+    resolver: linked.resolver,
     linkedAt: linked.linkedAt,
   });
 }

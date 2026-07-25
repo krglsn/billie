@@ -1,39 +1,54 @@
 import {
   createPublicClient,
   http,
-  namehash,
+  keccak256,
+  stringToBytes,
+  toHex,
   zeroAddress,
   type Address,
-  type PublicClient,
 } from "viem";
 import { normalize } from "viem/ens";
 import { sepolia } from "viem/chains";
 
-/** ENS Registry (same address on mainnet and Sepolia). */
-export const ENS_REGISTRY_ADDRESS =
-  "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e" as const;
+/**
+ * ENSv2 ETHRegistry on Sepolia (app.ens.dev / Namechain test deployment).
+ * Paired with ETHRegistrar 0x8c2E866B439358c41AE05De9cbE8A00BFEFafFcA.
+ * Override with ETHEREUM_SEPOLIA_ENS_V2_REGISTRY if deployments move.
+ */
+export const ENS_V2_ETH_REGISTRY_SEPOLIA =
+  "0xdedb92913a25abe1f7bcdd85d8a344a43b398b67" as const;
 
-/** Sepolia NameWrapper — registry owner is this address when the name is wrapped. */
-export const NAME_WRAPPER_SEPOLIA =
-  "0x0635513f179D50A207757E05759CbD106d7dFcE8" as const;
+const Status = {
+  AVAILABLE: 0,
+  RESERVED: 1,
+  REGISTERED: 2,
+} as const;
 
-const ensRegistryAbi = [
+const ensV2RegistryAbi = [
   {
     type: "function",
-    name: "owner",
+    name: "getState",
     stateMutability: "view",
-    inputs: [{ name: "node", type: "bytes32" }],
-    outputs: [{ name: "", type: "address" }],
+    inputs: [{ name: "anyId", type: "uint256" }],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "status", type: "uint8" },
+          { name: "expiry", type: "uint64" },
+          { name: "owner", type: "address" },
+          { name: "tokenId", type: "uint256" },
+          { name: "resource", type: "uint256" },
+        ],
+      },
+    ],
   },
-] as const;
-
-const nameWrapperAbi = [
   {
     type: "function",
-    name: "ownerOf",
+    name: "getResolver",
     stateMutability: "view",
-    inputs: [{ name: "id", type: "uint256" }],
-    outputs: [{ name: "owner", type: "address" }],
+    inputs: [{ name: "label", type: "string" }],
+    outputs: [{ type: "address" }],
   },
 ] as const;
 
@@ -42,8 +57,10 @@ export type EnsOwnershipResult =
       ok: true;
       name: string;
       owner: Address;
-      registryOwner: Address;
-      wrapped: boolean;
+      tokenId: string;
+      expiry: string;
+      resolver: Address;
+      protocol: "ensv2";
       chainId: "eip155:11155111";
     }
   | {
@@ -54,67 +71,94 @@ export type EnsOwnershipResult =
       detail?: string;
     };
 
-let cachedClient: PublicClient | undefined;
-
-function getSepoliaClient(): PublicClient {
-  if (cachedClient) return cachedClient;
-  cachedClient = createPublicClient({
+function getSepoliaClient() {
+  return createPublicClient({
     chain: sepolia,
     transport: http(process.env.ETHEREUM_SEPOLIA_RPC_URL),
   });
-  return cachedClient;
+}
+
+function getEthRegistryAddress(): `0x${string}` {
+  return (process.env.ETHEREUM_SEPOLIA_ENS_V2_REGISTRY ??
+    ENS_V2_ETH_REGISTRY_SEPOLIA) as `0x${string}`;
+}
+
+/** Extract the 2LD label from a normalized `foo.eth` name. */
+export function ethLabelFromName(name: string): string {
+  const normalized = normalize(name);
+  if (!normalized.endsWith(".eth")) {
+    throw new Error("Only .eth second-level names are supported");
+  }
+  const label = normalized.slice(0, -4);
+  if (!label || label.includes(".")) {
+    throw new Error("Only second-level .eth names are supported (e.g. billie.eth)");
+  }
+  return label;
+}
+
+export function labelHashOf(label: string): `0x${string}` {
+  return keccak256(toHex(stringToBytes(label)));
 }
 
 /**
- * Resolve the effective ENS owner on Ethereum Sepolia.
- * If the registry owner is the NameWrapper, unwrap via ownerOf(node).
+ * Resolve ENSv2 ownership for a Sepolia `.eth` name via ETHRegistry.getState.
  */
-export async function getEnsOwnerOnSepolia(name: string): Promise<{
+export async function getEnsV2OwnerOnSepolia(name: string): Promise<{
   owner: Address | null;
-  registryOwner: Address;
-  wrapped: boolean;
+  tokenId: bigint;
+  expiry: bigint;
+  status: number;
+  resolver: Address;
 }> {
   const client = getSepoliaClient();
-  const normalized = normalize(name);
-  const node = namehash(normalized);
+  const registry = getEthRegistryAddress();
+  const label = ethLabelFromName(name);
+  const labelHash = BigInt(labelHashOf(label));
 
-  const registryOwner = await client.readContract({
-    address: ENS_REGISTRY_ADDRESS,
-    abi: ensRegistryAbi,
-    functionName: "owner",
-    args: [node],
-  });
+  const [state, resolver] = await Promise.all([
+    client.readContract({
+      address: registry,
+      abi: ensV2RegistryAbi,
+      functionName: "getState",
+      args: [labelHash],
+    }),
+    client.readContract({
+      address: registry,
+      abi: ensV2RegistryAbi,
+      functionName: "getResolver",
+      args: [label],
+    }),
+  ]);
 
-  if (registryOwner === zeroAddress) {
-    return { owner: null, registryOwner, wrapped: false };
-  }
-
-  if (registryOwner.toLowerCase() === NAME_WRAPPER_SEPOLIA.toLowerCase()) {
-    const wrappedOwner = await client.readContract({
-      address: NAME_WRAPPER_SEPOLIA,
-      abi: nameWrapperAbi,
-      functionName: "ownerOf",
-      args: [BigInt(node)],
-    });
+  if (state.status !== Status.REGISTERED || state.owner === zeroAddress) {
     return {
-      owner: wrappedOwner,
-      registryOwner,
-      wrapped: true,
+      owner: null,
+      tokenId: state.tokenId,
+      expiry: state.expiry,
+      status: state.status,
+      resolver,
     };
   }
 
-  return { owner: registryOwner, registryOwner, wrapped: false };
+  return {
+    owner: state.owner,
+    tokenId: state.tokenId,
+    expiry: state.expiry,
+    status: state.status,
+    resolver,
+  };
 }
 
 /**
- * Verify that `agentAddress` owns `name` on Ethereum Sepolia ENS.
+ * Verify that `agentAddress` owns `name` on Ethereum Sepolia ENSv2.
  */
 export async function verifyAgentOwnsDomain(
   name: string,
   agentAddress: string,
 ): Promise<EnsOwnershipResult> {
   try {
-    const { owner, registryOwner, wrapped } = await getEnsOwnerOnSepolia(name);
+    const { owner, tokenId, expiry, resolver } =
+      await getEnsV2OwnerOnSepolia(name);
 
     if (!owner) {
       return { ok: false, name, reason: "not_registered" };
@@ -133,8 +177,10 @@ export async function verifyAgentOwnsDomain(
       ok: true,
       name,
       owner,
-      registryOwner,
-      wrapped,
+      tokenId: tokenId.toString(),
+      expiry: expiry.toString(),
+      resolver,
+      protocol: "ensv2",
       chainId: "eip155:11155111",
     };
   } catch (error) {

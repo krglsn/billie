@@ -4,7 +4,9 @@ export type LinkedDomain = {
   humanId: string;
   chainId: "eip155:11155111";
   ensOwner: string;
-  wrapped: boolean;
+  protocol: "ensv2";
+  tokenId: string;
+  resolver: string;
   linkedAt: string;
 };
 
