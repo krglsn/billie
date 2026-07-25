@@ -113,12 +113,24 @@ function InvoiceDetail() {
     void load();
   }, [load]);
 
-  const agent = data?.texts?.["billie.agent"] ?? null;
+  const agentFromQuery = searchParams.get("agent")?.trim() ?? "";
+  const domainFromQuery = searchParams.get("domain")?.trim() ?? "";
+  const agent =
+    data?.texts?.["billie.agent"] ?? (agentFromQuery || null);
   const humanId = data?.texts?.["billie.humanId"] ?? null;
   const fullName = data?.fullName ?? null;
   const ensExplorerUrl = fullName
     ? `https://explorer.ens.dev/${fullName}`
     : null;
+  const domainForBack =
+    domainFromQuery ||
+    data?.texts?.["billie.recipient"] ||
+    (fullName ? fullName.split(".").slice(1).join(".") : "");
+  const agentForBack = (agentFromQuery || agent || "").toLowerCase();
+  const dashboardHref =
+    agentForBack && domainForBack
+      ? `/?agent=${encodeURIComponent(agentForBack)}&domain=${encodeURIComponent(domainForBack)}`
+      : "/";
 
   const amountLabel = data
     ? data.amountDisplay
@@ -141,7 +153,7 @@ function InvoiceDetail() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
       <Link
-        href="/"
+        href={dashboardHref}
         className="text-sm font-medium text-accent transition hover:text-accent-hover"
       >
         ← Dashboard
