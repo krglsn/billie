@@ -1,5 +1,6 @@
 import { type Address, type Hex, zeroAddress } from "viem";
 import { checkBillieParentStatus } from "@/lib/billie-parent";
+import { consumeDomainClaimSlot } from "@/lib/domain-claim-rate-limit";
 import {
   Status,
   createSepoliaPublicClient,
@@ -47,9 +48,14 @@ export type ProvisionNamespaceError = {
     | "owner_mismatch"
     | "namespace_incomplete"
     | "billie_key_missing"
+    | "rate_limited"
     | "provision_failed";
   message: string;
   detail?: string;
+  limit?: number;
+  windowSec?: number;
+  count?: number;
+  retryAfterSec?: number;
 };
 
 export type ProvisionNamespaceResult =
@@ -159,6 +165,7 @@ async function tryRelinkExistingNamespace(input: {
 export async function provisionAgentNamespace(input: {
   label: string;
   agentAddress: Address;
+  humanId: string;
 }): Promise<ProvisionNamespaceResult> {
   const parent = await checkBillieParentStatus();
   if (!parent.ok || !parent.subregistry || !parent.name || !parent.label) {
@@ -185,6 +192,22 @@ export async function provisionAgentNamespace(input: {
   });
   if (relink) {
     return relink;
+  }
+
+  const rate = consumeDomainClaimSlot(input.humanId);
+  if (!rate.ok) {
+    return {
+      ok: false,
+      error: {
+        code: "rate_limited",
+        message: `Domain claim rate limit exceeded for this human (${rate.count}/${rate.limit} per ${rate.windowSec}s)`,
+        detail: `Retry after ${rate.retryAfterSec}s`,
+        limit: rate.limit,
+        windowSec: rate.windowSec,
+        count: rate.count,
+        retryAfterSec: rate.retryAfterSec,
+      },
+    };
   }
 
   let clients;

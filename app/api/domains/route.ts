@@ -132,21 +132,38 @@ export async function POST(request: Request) {
   const provisioned = await provisionAgentNamespace({
     label,
     agentAddress: agent.address as Address,
+    humanId: agent.humanId,
   });
 
   if (!provisioned.ok) {
-    const { code, message, detail } = provisioned.error;
+    const { code, message, detail, limit, windowSec, count, retryAfterSec } =
+      provisioned.error;
     const status =
       code === "parent_not_ready" || code === "billie_key_missing"
         ? 503
-        : code === "label_taken" ||
-            code === "owner_mismatch" ||
-            code === "namespace_incomplete"
-          ? 409
-          : 502;
+        : code === "rate_limited"
+          ? 429
+          : code === "label_taken" ||
+              code === "owner_mismatch" ||
+              code === "namespace_incomplete"
+            ? 409
+            : 502;
+    const headers =
+      code === "rate_limited" && retryAfterSec
+        ? { "Retry-After": String(retryAfterSec) }
+        : undefined;
     return NextResponse.json(
-      { error: message, code, detail, name, parentName },
-      { status },
+      {
+        error: message,
+        code,
+        detail,
+        name,
+        parentName,
+        ...(code === "rate_limited"
+          ? { limit, windowSec, count, retryAfterSec }
+          : {}),
+      },
+      { status, headers },
     );
   }
 

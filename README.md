@@ -80,10 +80,13 @@ and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
    If the namespace is **already on-chain** for this agent (owner + UserRegistry + `ROLE_REGISTRAR`), Billie **re-links** it in memory after a restart (`relinked: true`, no new txs).
 6. Stores `humanId → agentAddress → namespace` (includes `subregistry` for later invoices).
 
+Optional anti-abuse (Billie pays gas for new namespaces): set `BILLIE_DOMAIN_CLAIM_RATE_LIMIT` + `BILLIE_DOMAIN_CLAIM_RATE_WINDOW_SEC` (default window 86400s). Exceeded → `429` + `Retry-After`. Re-links do not count.
+
 | Status | Meaning |
 |--------|---------|
 | `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
 | `409` | namespace already linked, label taken on-chain, or agent already has a namespace |
+| `429` | humanId domain-claim rate limit (`BILLIE_DOMAIN_CLAIM_RATE_LIMIT`) |
 | `503` | parent UserRegistry not ready / Billie key missing |
 | `502` | on-chain provision failed |
 | `200` | provisioned + linked; response includes `mapping`, `subregistry`, `txs` |
@@ -99,7 +102,7 @@ Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice
 
 1. Deploy invoice resolver once: `pnpm ops:invoice-resolver` → set `BILLIE_INVOICE_RESOLVER` in `.env`, restart API.
 2. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
-3. `POST /api/invoices` → attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver).
+3. `POST /api/invoices` → requires `canWriteInvoiceTexts`; returns attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver). `503` + `invoice_texts_unavailable` if resolver/roles not ready.
 4. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
 5. After confirm, Billie writes ENS text records via resolver `multicall` (`billie.amount`, `billie.attestation`, …). Differentiated `code` if register or texts fail.
 

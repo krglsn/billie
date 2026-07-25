@@ -3,6 +3,7 @@ import {
   isNextResponse,
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
+import { checkBillieParentStatus } from "@/lib/billie-parent";
 import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
 import {
   InvoicePrepareError,
@@ -34,6 +35,31 @@ export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
   if (isNextResponse(agent)) {
     return agent;
+  }
+
+  const parent = await checkBillieParentStatus();
+  if (!parent.canWriteInvoiceTexts) {
+    const textsCheck = parent.checks.find(
+      (c) =>
+        c.id === "invoice_resolver_configured" ||
+        c.id === "billie_can_set_invoice_text",
+    );
+    return NextResponse.json(
+      {
+        error: "Invoice text records are not available",
+        code: "invoice_texts_unavailable",
+        detail:
+          textsCheck?.detail ??
+          "Billie cannot write ENS text records — set BILLIE_INVOICE_RESOLVER and ensure ROLE_SET_TEXT",
+        canWriteInvoiceTexts: false,
+        checks: parent.checks.filter(
+          (c) =>
+            c.id === "invoice_resolver_configured" ||
+            c.id === "billie_can_set_invoice_text",
+        ),
+      },
+      { status: 503 },
+    );
   }
 
   let body: PrepareInvoiceBody;
