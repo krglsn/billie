@@ -1,6 +1,6 @@
 # Billie
 
-Human-backed agent invoice API (Stage 1).
+Invoice system for human-backed agents. If your agent is verified with World AgentKit, it can create invoices in Billie that are saved as ENS domains and can be easily shared as domain link and paid by anyone.
 
 ## Stack
 
@@ -17,18 +17,28 @@ Human-backed agent invoice API (Stage 1).
 | Agent namespace + invoice subdomains | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
 | AgentBook lookup | World Chain | `eip155:480` |
 
-## Setup
 
-```bash
-pnpm install
-pnpm dev --hostname 127.0.0.1 --port 3000
-```
+## Flow
 
-**Always use `127.0.0.1`, not `localhost`.** The dev server binds IPv4 only; on macOS `localhost` often resolves to `::1` and requests hang.
+AI Agent associated with a wallet and backed by your World ID connects to Billie API, registers a domain and can issue invoices via Billie API. Invoices are ENS subdomains that filled with domain text records representing the invoice - easy to share, verify and pay.
 
-Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sepolia RPCs default to public endpoints if unset.
+## Roles
 
-## Endpoints (Stage 1)
+### Service operator
+- Registers root domain for invoices and set them up properly
+- Launches Billie API and Dashboard
+- Deploys Billie Router contract
+
+### AI Agent
+- Connects Billie API and can use the following features if he is verified human-backed agent:
+-- registers a new subdomain for invoices
+-- issues an invoice in form of ENS subdomain, verified and attestated by Billie
+
+### Customer
+- Validates invoice through Billie dashboard or smart contract
+- Pays the invoice per its parameters
+
+## Billie API Endpoints
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
@@ -38,34 +48,6 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 | `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
 | `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
 | `GET` | `/api/invoices/resolve` | public | ENS texts + computed payment status + approve/pay calldata |
-
-### Parent domain readiness (`GET /api/health`)
-
-Billie is pivoting to a single parent name (`BILLIE_PARENT_NAME`, e.g. `billie.eth`) owned by `BILLIE_PRIVATE_KEY`. Health checks on-chain:
-
-1. Parent name registered on Sepolia ENSv2
-2. Owner matches `BILLIE_PRIVATE_KEY`
-3. A UserRegistry is attached (`getSubregistry`)
-4. Billie has `ROLE_REGISTRAR` on that registry (can provision agent namespaces)
-
-HTTP **200** when ready, **503** when any required check fails. Response includes `parent.checks[]`.
-
-```bash
-# .env: BILLIE_PRIVATE_KEY + BILLIE_PARENT_NAME=yourname.eth
-# Register yourname.eth on app.ens.dev to that same address first.
-
-curl -s http://127.0.0.1:3000/api/health | jq .
-# registered, no UserRegistry yet → ok:false, subregistry_attached fails
-
-pnpm ops:parent-registry
-# deploys UserRegistry, setParent, setSubregistry
-
-curl -s http://127.0.0.1:3000/api/health | jq .
-# → ok:true, canProvisionAgents:true
-```
-
-`/api/invoices` requires a previously linked domain for the agent.
-Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
 
 ### Domain claim / namespace provision
 
@@ -83,138 +65,77 @@ and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
 
 Optional anti-abuse (Billie pays gas for new namespaces): set `BILLIE_DOMAIN_CLAIM_RATE_LIMIT` + `BILLIE_DOMAIN_CLAIM_RATE_WINDOW_SEC` (default window 86400s). Exceeded → `429` + `Retry-After`. Re-links do not count.
 
-| Status | Meaning |
-|--------|---------|
-| `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
-| `409` | namespace already linked, label taken on-chain, or agent already has a namespace |
-| `429` | humanId domain-claim rate limit (`BILLIE_DOMAIN_CLAIM_RATE_LIMIT`) |
-| `503` | parent UserRegistry not ready / Billie key missing |
-| `502` | on-chain provision failed |
-| `200` | provisioned + linked; response includes `mapping`, `subregistry`, `txs` |
-
-```bash
-pnpm agent:domain -- alice
-# → 200 + alice.<BILLIE_PARENT_NAME> + subregistry
-```
-
 ### Invoice prepare + submit
 
 Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice.eth`.
 
-Settlement fields (written as ENS texts after submit):
+Settlement fields are written as ENS texts after submit
 
 - `amount` — **atomic units** string (e.g. `1000000` for 1 USDC with 6 decimals)
-- `currency` — human ticker (`USDC`)
 - `token` — ERC-20 address
 - `paymentAddress` — optional; defaults to the agent wallet
+- `attestation` - EIP721 Billie attestation value
 
-1. Deploy invoice resolver once: `pnpm ops:invoice-resolver` → set `BILLIE_INVOICE_RESOLVER` in `.env`, restart API.
-2. Deploy payment router: `pnpm ops:payment-router` → set `BILLIE_PAYMENT_ROUTER` (needs [Foundry](https://book.getfoundry.sh/) `forge`).
-3. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
-4. `POST /api/invoices` → requires `canWriteInvoiceTexts`; returns attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver). `503` + `invoice_texts_unavailable` if resolver/roles not ready.
-5. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
-6. After confirm, Billie writes ENS text records via resolver `multicall` (`billie.amount`, `billie.token`, `billie.attestation`, …). Differentiated `code` if register or texts fail.
-
-```bash
-pnpm ops:invoice-resolver
-# add BILLIE_INVOICE_RESOLVER=0x... to .env and restart
-
-pnpm ops:payment-router
-# add BILLIE_PAYMENT_ROUTER=0x... to .env and restart
-
-# Publish source on Sepolia Etherscan (methods + Solidity on Contract tab):
-# set ETHERSCAN_API_KEY in .env, then:
-pnpm ops:payment-router -- --verify-only
-
-pnpm agent:invoice -- alice.agentinvoice.eth inv-01 1000000 USDC 0xTokenAddress
-BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- alice.agentinvoice.eth inv-02 500000 USDC 0xTokenAddress
-```
-
-Design notes: [docs/invoice-payment-router.md](./docs/invoice-payment-router.md).
-
-### Pay invoice (Billie Pay)
+### Pay invoice
 
 1. `GET /api/invoices/resolve?name=inv-01.alice.agentinvoice.eth` — reads ENS texts, `eth_call` `PaymentRouter.paid` / `checkInvoice`, returns computed `paymentStatus` and approve + `payInvoice` calldata.
 2. Payer approves the ERC-20 to the router, then calls `payInvoice(node)`.
 3. Re-resolve: `paymentStatus` becomes `paid` when `paid[node]` is true (no event listener).
 
+
+## Quick start guide
+
+### 1. Billie setup
+
+1. Manually register root Billie domain via ENS dashboard. 
+2. Set BILLIE_PRIVATE_KEY and BILLIE_PARENT_NAME in .env
+3. Deploy UserRegistry, setParent, setSubregistry
 ```bash
-# Status only (no wallet)
-pnpm invoice:status -- inv-01.alice.agentinvoice.eth
+pnpm ops:parent-registry
+``` 
+4. Set resolver, get result adn add BILLIE_INVOICE_RESOLVER to .env
+ ```bash
+ pnpm ops:invoice-resolver
+ ```
+ 
+5. Deploy Billie router, get the address and add BILLIE_PAYMENT_ROUTER to the .env
 
-# Approve + pay from a third-party wallet (private key on CLI)
-pnpm pay:invoice -- inv-01.alice.agentinvoice.eth 0xPayerPrivateKey
-```
-
----
-
-## Stage 1 verification checklist
-
-Use two terminals. Keep the API running while you run agent scripts.
-
-### 1. Start API
-
+Note: you need to set `ETHERSCAN_API_KEY` env var to get contract verified and readable on Etherscan 
+```bash
+pnpm ops:payment-router
+``` 
+6. Launch the app and validate /api/health status after launch 
 ```bash
 pnpm dev --hostname 127.0.0.1 --port 3000
 ```
 
-### 2. Public health
-
+### 2. Agent setup
+1. Set `AGENT_PRIVATE_KEY` in .env
+2. Register the agent in World agentBook using confirmation by you WorldID:
 ```bash
-curl -s http://127.0.0.1:3000/api/health
-# → 200 + ok:true when BILLIE_PARENT_NAME is registered, owned by BILLIE_PRIVATE_KEY, and UserRegistry is attached
-# → 503 + ok:false + parent.checks[] when not ready (e.g. missing subregistry)
+npx @worldcoin/agentkit-cli register <agent wallet address>
 ```
-
-### 3. Unauthenticated protected routes → 402
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/me
-# → 402
-
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -X POST http://127.0.0.1:3000/api/domains \
-  -H 'content-type: application/json' \
-  -d '{"name":"demo"}'
-# → 402
-```
-
-### 4. Create + register an agent wallet (once)
-
+3. Check agent authorisation on Billie API
 ```bash
 pnpm agent:me
-# save address + privateKey
-
-npx @worldcoin/agentkit-cli register 0xYourAddress
-npx @worldcoin/agentkit-cli status 0xYourAddress
 ```
-
-### 5. Authorized identity probe
-
-Put the key in `.env` (see `.env.example`), then:
-
+4. Register a namespace (subdomain) for agent invoices (can have multiple per agent)
 ```bash
-pnpm agent:me
-# → 200 + humanId
+pnpm agent:domain agent_invoices
 ```
-
-### 6. Namespace claim
-
-1. Parent ready: `curl -s http://127.0.0.1:3000/api/health` → `ok: true`
-2. Claim a label under the parent:
-
+5. Prepare invoice with parameters, get attestated calldata from Billie API sign and submit back to Billie:
 ```bash
-pnpm agent:domain -- alice
-# → 200 + mapping { humanId, agentAddress, domain: "alice.<parent>.eth" } + subregistry
-
-pnpm agent:domain -- alice
-# → 409 already linked (or agent already has a namespace)
+pnpm agent:invoice agent_invoices invoice_01 100 USDC
+```
+6. Check the status of invoice to ensure it is unpaid:
+```bash
+pnpm invoice:status agent_invoices invoice_01
 ```
 
-### Pass criteria
+### 3. Pay invoice using dashboard
+1. Open webdashboard in the browser http://127.0.0.1:3000
+2. Choose Agent and Domain to see invoices
+3. Choose invoice
+4. Connect a wallet, approve and pay amount of Sepolia USDC specified in the invoice
+5. Invoice status changed to paid
 
-- [ ] `/api/health` → 200 when parent + UserRegistry ready (else 503 + `parent.checks`)
-- [ ] `/api/me` and `/api/domains` without AgentKit → 402
-- [ ] Registered agent → `/api/me` 200 + `humanId`
-- [ ] Human-backed agent → `/api/domains` provisions namespace + returns `subregistry`
-- [ ] Same namespace twice / second namespace for same agent → 409
