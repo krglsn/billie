@@ -281,12 +281,9 @@ function InvoiceDetail() {
                   <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
                     Attestation
                   </th>
-                  <td className="px-4 py-3 text-sm">
-                    {v?.attestation ? (
-                      <Badge {...v.attestation} />
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
+                  <td className="px-4 py-3 font-mono text-xs break-all sm:text-sm">
+                    {data.texts?.["billie.attestation"] ?? "—"}
+                    {v?.attestation ? <Badge {...v.attestation} /> : null}
                   </td>
                 </tr>
               </tbody>
