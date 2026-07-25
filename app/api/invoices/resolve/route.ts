@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { zeroAddress } from "viem";
 import { normalize } from "viem/ens";
+import {
+  formatAtomicAmount,
+  formatCurrencyDisplay,
+  readErc20TokenMeta,
+} from "@/lib/erc20";
 import { readInvoiceTextRecords } from "@/lib/invoice-texts";
 import { getInvoiceByFullName } from "@/lib/invoices";
 import {
@@ -94,6 +99,15 @@ export async function GET(request: Request) {
       ? routerCheck.paymentAddress
       : (settlement.paymentAddress ?? memory?.paymentAddress);
 
+  const tokenMeta = token ? await readErc20TokenMeta(token) : null;
+  const amountDisplay =
+    amountAtomic && tokenMeta
+      ? formatAtomicAmount(amountAtomic, tokenMeta.decimals)
+      : null;
+  const currencyDisplay = tokenMeta
+    ? formatCurrencyDisplay(tokenMeta)
+    : (settlement.currency ?? memory?.currency ?? null);
+
   const pay =
     router && routerCheck?.payable === true && token && amountAtomic
       ? {
@@ -125,8 +139,11 @@ export async function GET(request: Request) {
     paidOnRouter,
     ensStatus: settlement.status ?? null,
     amount: amountAtomic ?? null,
+    amountDisplay,
     currency: settlement.currency ?? memory?.currency ?? null,
+    currencyDisplay,
     token: token ?? null,
+    tokenMeta,
     paymentAddress: paymentAddress ?? null,
     invoiceId: settlement.invoiceId ?? memory?.id ?? null,
     texts,

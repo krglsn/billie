@@ -15,8 +15,16 @@ type ResolveResponse = {
   fullName?: string;
   invoiceId?: string | null;
   amount?: string | null;
+  amountDisplay?: string | null;
   currency?: string | null;
+  currencyDisplay?: string | null;
   token?: string | null;
+  tokenMeta?: {
+    address: string;
+    name: string;
+    symbol: string;
+    decimals: number;
+  } | null;
   paymentAddress?: string | null;
   paymentStatus?: string;
   paidOnRouter?: boolean | null;
@@ -71,8 +79,18 @@ function InvoiceDetail() {
   const rows: [string, string | null | undefined][] = data
     ? [
         ["Invoice ID", data.invoiceId],
-        ["Amount", data.amount],
-        ["Currency", data.currency],
+        [
+          "Amount",
+          data.amountDisplay
+            ? data.tokenMeta?.symbol
+              ? `${data.amountDisplay} ${data.tokenMeta.symbol}`
+              : data.amountDisplay
+            : data.amount,
+        ],
+        [
+          "Currency",
+          data.currencyDisplay ?? data.currency,
+        ],
         ["Token", data.token],
         ["Payment address", data.paymentAddress],
         ["Status", data.paymentStatus],
