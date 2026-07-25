@@ -7,7 +7,8 @@ Invoice system for human-backed agents. If your agent is verified with World Age
 - Next.js (App Router) + TypeScript
 - pnpm
 - World AgentKit (human-backed agent verification)
-- viem (Ethereum Sepolia **ENSv2** ownership checks)
+- viem 
+- **ENSv2** to register domain, subdomains, create registry, grant roles
 
 ## Chains (target)
 
@@ -38,30 +39,11 @@ AI Agent associated with a wallet and backed by your World ID connects to Billie
 - Validates invoice through Billie dashboard or smart contract
 - Pays the invoice per its parameters
 
-## Billie API Endpoints
-
-| Method | Path | Auth | Notes |
-|--------|------|------|-------|
-| `GET` | `/api/health` | public | liveness + Billie parent ENSv2 readiness |
-| `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
-| `POST` | `/api/domains` | AgentKit | provision agent namespace under parent + link |
-| `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
-| `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
-| `GET` | `/api/invoices/resolve` | public | ENS texts + computed payment status + approve/pay calldata |
-
 ### Domain claim / namespace provision
 
 Billie owns `BILLIE_PARENT_NAME` (e.g. `agentinvoice.eth`) and its UserRegistry.
 Agents claim a **namespace** under that parent — Billie deploys their UserRegistry
 and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
-
-1. Ensure `/api/health` is `ok: true` (`pnpm ops:parent-registry` if needed).
-2. `POST /api/domains` with `{ "name": "alice" }` (or `alice.agentinvoice.eth`) + AgentKit.
-3. API verifies human-backed identity (AgentBook on World Chain).
-4. If the namespace is already linked, or this agent already has one → `409`.
-5. Billie deploys agent UserRegistry, grants `ROLE_REGISTRAR` to the agent, registers the label under the parent registry.
-   If the namespace is **already on-chain** for this agent (owner + UserRegistry + `ROLE_REGISTRAR`), Billie **re-links** it in memory after a restart (`relinked: true`, no new txs).
-6. Stores `humanId → agentAddress → namespace` (includes `subregistry` for later invoices).
 
 Optional anti-abuse (Billie pays gas for new namespaces): set `BILLIE_DOMAIN_CLAIM_RATE_LIMIT` + `BILLIE_DOMAIN_CLAIM_RATE_WINDOW_SEC` (default window 86400s). Exceeded → `429` + `Retry-After`. Re-links do not count.
 
@@ -69,7 +51,7 @@ Optional anti-abuse (Billie pays gas for new namespaces): set `BILLIE_DOMAIN_CLA
 
 Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice.eth`.
 
-Settlement fields are written as ENS texts after submit
+Settlement fields are written as ENS texts after submit, here are few of them:
 
 - `amount` — **atomic units** string (e.g. `1000000` for 1 USDC with 6 decimals)
 - `token` — ERC-20 address
@@ -123,7 +105,7 @@ pnpm agent:me
 ```bash
 pnpm agent:domain agent_invoices
 ```
-5. Prepare invoice with parameters, get attestated calldata from Billie API sign and submit back to Billie:
+5. Prepare invoice with parameters, get attestated calldata from Billie API, sign and submit back to Billie:
 ```bash
 pnpm agent:invoice agent_invoices invoice_01 100 USDC
 ```
@@ -139,3 +121,14 @@ pnpm invoice:status agent_invoices invoice_01
 4. Connect a wallet, approve and pay amount of Sepolia USDC specified in the invoice
 5. Invoice status changed to paid
 
+
+## Billie API Endpoints
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| `GET` | `/api/health` | public | liveness + Billie parent ENSv2 readiness |
+| `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
+| `POST` | `/api/domains` | AgentKit | provision agent namespace under parent + link |
+| `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
+| `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
+| `GET` | `/api/invoices/resolve` | public | ENS texts + computed payment status + approve/pay calldata |
