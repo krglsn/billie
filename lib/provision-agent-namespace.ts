@@ -1,6 +1,10 @@
 import { type Address, type Hex, zeroAddress } from "viem";
 import { checkBillieParentStatus } from "@/lib/billie-parent";
-import { Status, getRegistryLabelState } from "@/lib/ens";
+import {
+  Status,
+  createSepoliaPublicClient,
+  getRegistryLabelState,
+} from "@/lib/ens";
 import {
   createBillieSepoliaClients,
   deployUserRegistry,
@@ -12,6 +16,8 @@ import {
   AGENT_NAMESPACE_NAME_ROLES,
   AGENT_NAMESPACE_REGISTRAR_ROLES,
   BILLIE_AGENT_REGISTRY_ADMIN_ROLES,
+  ROLE_REGISTRAR,
+  enhancedAccessControlAbi,
 } from "@/lib/ens-roles";
 
 export type ProvisionedNamespace = {
@@ -24,11 +30,13 @@ export type ProvisionedNamespace = {
   tokenId: string;
   resolver: Address;
   expiry: string;
+  /** True when an existing on-chain namespace was re-linked (no new txs). */
+  relinked: boolean;
   txs: {
-    deploy: Hex;
-    setParent: Hex;
-    grantRegistrar: Hex;
-    register: Hex;
+    deploy?: Hex;
+    setParent?: Hex;
+    grantRegistrar?: Hex;
+    register?: Hex;
   };
 };
 
@@ -36,6 +44,8 @@ export type ProvisionNamespaceError = {
   code:
     | "parent_not_ready"
     | "label_taken"
+    | "owner_mismatch"
+    | "namespace_incomplete"
     | "billie_key_missing"
     | "provision_failed";
   message: string;
@@ -47,7 +57,100 @@ export type ProvisionNamespaceResult =
   | { ok: false; error: ProvisionNamespaceError };
 
 /**
- * Billie provisions `{label}.{parent}.eth`:
+ * If `{label}` is already registered under the parent registry and is ready
+ * for this agent (owner match + UserRegistry + ROLE_REGISTRAR), return it
+ * for in-memory re-link after a service restart.
+ */
+async function tryRelinkExistingNamespace(input: {
+  label: string;
+  agentAddress: Address;
+  parentName: string;
+  parentRegistry: Address;
+}): Promise<ProvisionNamespaceResult | null> {
+  const existing = await getRegistryLabelState(
+    input.parentRegistry,
+    input.label,
+  );
+
+  if (existing.status !== Status.REGISTERED || !existing.owner) {
+    return null;
+  }
+
+  if (existing.owner.toLowerCase() !== input.agentAddress.toLowerCase()) {
+    return {
+      ok: false,
+      error: {
+        code: "owner_mismatch",
+        message: `Namespace label already registered under ${input.parentName} to another owner`,
+        detail: existing.owner,
+      },
+    };
+  }
+
+  if (!existing.subregistry) {
+    return {
+      ok: false,
+      error: {
+        code: "namespace_incomplete",
+        message:
+          "Namespace is registered on-chain but has no UserRegistry — cannot re-link for invoices",
+        detail: `${input.label}.${input.parentName}`,
+      },
+    };
+  }
+
+  const client = createSepoliaPublicClient();
+  let isRegistrar = false;
+  try {
+    isRegistrar = await client.readContract({
+      address: existing.subregistry,
+      abi: enhancedAccessControlAbi,
+      functionName: "hasRootRoles",
+      args: [ROLE_REGISTRAR, input.agentAddress],
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: "namespace_incomplete",
+        message: "Failed to verify ROLE_REGISTRAR on agent UserRegistry",
+        detail: error instanceof Error ? error.message : "Unknown error",
+      },
+    };
+  }
+
+  if (!isRegistrar) {
+    return {
+      ok: false,
+      error: {
+        code: "namespace_incomplete",
+        message:
+          "Namespace UserRegistry exists but agent lacks ROLE_REGISTRAR — cannot issue invoices",
+        detail: existing.subregistry,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    namespace: {
+      name: `${input.label}.${input.parentName}`,
+      label: input.label,
+      parentName: input.parentName,
+      parentRegistry: input.parentRegistry,
+      subregistry: existing.subregistry,
+      agentAddress: input.agentAddress,
+      tokenId: existing.tokenId.toString(),
+      resolver: existing.resolver,
+      expiry: existing.expiry.toString(),
+      relinked: true,
+      txs: {},
+    },
+  };
+}
+
+/**
+ * Billie provisions `{label}.{parent}.eth`, or re-links an existing ready namespace:
  * 1. Deploy agent UserRegistry (Billie admin)
  * 2. setParent(parentRegistry, label)
  * 3. grant ROLE_REGISTRAR to agent
@@ -74,16 +177,14 @@ export async function provisionAgentNamespace(input: {
   }
 
   const parentRegistry = parent.subregistry;
-  const existing = await getRegistryLabelState(parentRegistry, input.label);
-  if (existing.status === Status.REGISTERED || existing.owner) {
-    return {
-      ok: false,
-      error: {
-        code: "label_taken",
-        message: `Namespace label already registered under ${parent.name}`,
-        detail: existing.owner ?? undefined,
-      },
-    };
+  const relink = await tryRelinkExistingNamespace({
+    label: input.label,
+    agentAddress: input.agentAddress,
+    parentName: parent.name,
+    parentRegistry,
+  });
+  if (relink) {
+    return relink;
   }
 
   let clients;
@@ -156,6 +257,7 @@ export async function provisionAgentNamespace(input: {
         tokenId: tokenId.toString(),
         resolver: after.resolver,
         expiry: after.expiry.toString(),
+        relinked: false,
         txs: {
           deploy: deployTx,
           setParent: setParentTx,

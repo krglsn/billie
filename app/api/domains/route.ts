@@ -6,8 +6,8 @@ import {
 } from "@/lib/agentkit";
 import { getBillieParentName } from "@/lib/billie-parent";
 import {
+  getLinkedDomain,
   getLinkedDomainByAgent,
-  isDomainLinked,
   linkDomain,
   resolveNamespaceClaim,
 } from "@/lib/domains";
@@ -17,6 +17,32 @@ type ClaimDomainBody = {
   name?: unknown;
 };
 
+function linkedResponse(
+  linked: ReturnType<typeof linkDomain>,
+  extra?: { relinked?: boolean; txs?: Record<string, string> },
+) {
+  return NextResponse.json({
+    ok: true,
+    mapping: {
+      humanId: linked.humanId,
+      agentAddress: linked.agentAddress,
+      domain: linked.name,
+    },
+    name: linked.name,
+    label: linked.label,
+    parentName: linked.parentName,
+    subregistry: linked.subregistry,
+    chainId: linked.chainId,
+    protocol: linked.protocol,
+    ensOwner: linked.ensOwner,
+    tokenId: linked.tokenId,
+    resolver: linked.resolver,
+    linkedAt: linked.linkedAt,
+    relinked: extra?.relinked ?? false,
+    txs: extra?.txs ?? {},
+  });
+}
+
 /**
  * Provision + claim an agent namespace under BILLIE_PARENT_NAME.
  *
@@ -24,7 +50,8 @@ type ClaimDomainBody = {
  *
  * Flow:
  * - AgentKit human-backed identity
- * - Billie deploys agent UserRegistry, registers `{label}.{parent}.eth`
+ * - If namespace already on-chain for this agent (and invoice-ready) → re-link in memory
+ * - Else Billie deploys agent UserRegistry and registers `{label}.{parent}.eth`
  * - Stores humanId → agentAddress → namespace (+ subregistry for invoices)
  */
 export async function POST(request: Request) {
@@ -73,10 +100,14 @@ export async function POST(request: Request) {
     );
   }
 
-  if (isDomainLinked(name)) {
+  const alreadyLinked = getLinkedDomain(name);
+  if (alreadyLinked) {
+    if (alreadyLinked.agentAddress === agent.address.toLowerCase()) {
+      return linkedResponse(alreadyLinked, { relinked: true });
+    }
     return NextResponse.json(
       {
-        error: "Namespace is already registered on Billie",
+        error: "Namespace is already registered on Billie to another agent",
         name,
       },
       { status: 409 },
@@ -85,6 +116,9 @@ export async function POST(request: Request) {
 
   const existingForAgent = getLinkedDomainByAgent(agent.address);
   if (existingForAgent) {
+    if (existingForAgent.name === name) {
+      return linkedResponse(existingForAgent, { relinked: true });
+    }
     return NextResponse.json(
       {
         error: "Agent already has a linked namespace on Billie",
@@ -103,13 +137,13 @@ export async function POST(request: Request) {
   if (!provisioned.ok) {
     const { code, message, detail } = provisioned.error;
     const status =
-      code === "parent_not_ready"
+      code === "parent_not_ready" || code === "billie_key_missing"
         ? 503
-        : code === "label_taken"
+        : code === "label_taken" ||
+            code === "owner_mismatch" ||
+            code === "namespace_incomplete"
           ? 409
-          : code === "billie_key_missing"
-            ? 503
-            : 502;
+          : 502;
     return NextResponse.json(
       { error: message, code, detail, name, parentName },
       { status },
@@ -131,23 +165,10 @@ export async function POST(request: Request) {
     subregistry: ns.subregistry,
   });
 
-  return NextResponse.json({
-    ok: true,
-    mapping: {
-      humanId: linked.humanId,
-      agentAddress: linked.agentAddress,
-      domain: linked.name,
-    },
-    name: linked.name,
-    label: linked.label,
-    parentName: linked.parentName,
-    subregistry: linked.subregistry,
-    chainId: linked.chainId,
-    protocol: linked.protocol,
-    ensOwner: linked.ensOwner,
-    tokenId: linked.tokenId,
-    resolver: linked.resolver,
-    linkedAt: linked.linkedAt,
-    txs: ns.txs,
+  return linkedResponse(linked, {
+    relinked: ns.relinked,
+    txs: Object.fromEntries(
+      Object.entries(ns.txs).filter(([, v]) => typeof v === "string"),
+    ) as Record<string, string>,
   });
 }

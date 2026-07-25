@@ -77,6 +77,7 @@ and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
 3. API verifies human-backed identity (AgentBook on World Chain).
 4. If the namespace is already linked, or this agent already has one → `409`.
 5. Billie deploys agent UserRegistry, grants `ROLE_REGISTRAR` to the agent, registers the label under the parent registry.
+   If the namespace is **already on-chain** for this agent (owner + UserRegistry + `ROLE_REGISTRAR`), Billie **re-links** it in memory after a restart (`relinked: true`, no new txs).
 6. Stores `humanId → agentAddress → namespace` (includes `subregistry` for later invoices).
 
 | Status | Meaning |
