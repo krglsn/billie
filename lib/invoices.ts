@@ -10,6 +10,12 @@ export type InvoiceStatus =
   | "confirmed"
   | "failed";
 
+export type PreparedTxPayload = {
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value: "0";
+};
+
 export type InvoiceRecord = {
   id: string;
   label: string;
@@ -23,11 +29,8 @@ export type InvoiceRecord = {
   attestation: InvoiceAttestation;
   texts: InvoiceTextRecords;
   chainId: "eip155:11155111";
-  tx: {
-    to: `0x${string}`;
-    data: `0x${string}`;
-    value: "0";
-  };
+  /** register() on agent UserRegistry — agent-signed */
+  tx: PreparedTxPayload;
   stubCalldata: boolean;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +39,7 @@ export type InvoiceRecord = {
   textsWritten?: boolean;
   textsError?: string;
   error?: string;
+  errorCode?: string;
 };
 
 const byId = new Map<string, InvoiceRecord>();
@@ -83,7 +87,7 @@ export function savePreparedInvoice(input: {
   domain: LinkedDomain;
   attestation: InvoiceAttestation;
   texts: InvoiceTextRecords;
-  tx: InvoiceRecord["tx"];
+  tx: PreparedTxPayload;
   stubCalldata: boolean;
 }): InvoiceRecord {
   const fullName = `${input.label}.${input.domain.name}`;
@@ -124,6 +128,7 @@ export function updateInvoice(
       | "status"
       | "txHash"
       | "error"
+      | "errorCode"
       | "updatedAt"
       | "textsTxHash"
       | "textsWritten"

@@ -201,6 +201,6 @@ export async function POST(request: Request) {
     stubCalldata: false,
     chainId: invoice.chainId,
     tx: invoice.tx,
-    hint: "Sign the tx from the agent wallet and POST /api/invoices/submit (agent pays gas). Billie writes ENS text records after confirmation.",
+    hint: "Sign the tx from the agent wallet and POST /api/invoices/submit (agent pays gas for register). Billie writes ENS text records after confirmation.",
   });
 }

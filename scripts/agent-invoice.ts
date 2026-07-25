@@ -6,8 +6,8 @@
  *   pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency>
  *   pnpm agent:invoice -- alice.agentinvoice.eth inv-01 100 USDC
  *
- * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia tx and POST /api/invoices/submit
- * (agent pays gas; register goes to the agent UserRegistry).
+ * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia register tx and POST /api/invoices/submit
+ * (agent pays gas for register; Billie writes text records after confirm).
  *
  * Optional: BILLIE_TX_GAS, BILLIE_TX_MAX_FEE_GWEI, BILLIE_TX_PRIORITY_FEE_GWEI,
  * BILLIE_SKIP_GAS_ESTIMATE=1.
@@ -135,7 +135,7 @@ async function main() {
     signedTx = await wallet.signTransaction(request);
   }
 
-  console.log("\nSubmitting signed tx...");
+  console.log("\nSubmitting signed register tx...");
   const submitRes = await agentkit.fetch(`${API_URL}/api/invoices/submit`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -143,7 +143,7 @@ async function main() {
       invoiceId: prepared.invoiceId,
       signedTx,
     }),
-    signal: AbortSignal.timeout(TIMEOUT_MS + 60_000),
+    signal: AbortSignal.timeout(TIMEOUT_MS + 90_000),
   });
   const submitted = await submitRes.json().catch(() => null);
   console.log(`Submit status: ${submitRes.status}`);

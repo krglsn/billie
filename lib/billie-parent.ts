@@ -49,6 +49,7 @@ export type BillieParentStatus = {
   verifiableFactory: Address;
   userRegistryImpl: Address;
   canProvisionAgents: boolean;
+  /** Billie can write invoice text records on the shared PermissionedResolver. */
   canWriteInvoiceTexts: boolean;
   checks: ParentCheck[];
 };

@@ -101,7 +101,7 @@ Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice
 2. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
 3. `POST /api/invoices` → attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver).
 4. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
-5. After confirmation, Billie writes ENS text records (`billie.amount`, `billie.currency`, `billie.status`, `billie.attestation`, …).
+5. After confirm, Billie writes ENS text records via resolver `multicall` (`billie.amount`, `billie.attestation`, …). Differentiated `code` if register or texts fail.
 
 ```bash
 pnpm ops:invoice-resolver

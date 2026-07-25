@@ -33,6 +33,7 @@ const registerAbi = [
 ] as const;
 
 export type PreparedInvoiceTx = {
+  /** register() on the agent UserRegistry */
   to: Address;
   data: Hex;
   value: "0";
@@ -40,7 +41,6 @@ export type PreparedInvoiceTx = {
   fullName: string;
   resolver: Address;
   texts: InvoiceTextRecords;
-  /** Always false for namespace invoices (agent UserRegistry is required). */
   stubCalldata: false;
   attestation: InvoiceAttestation;
 };
@@ -60,9 +60,9 @@ export class InvoicePrepareError extends Error {
 }
 
 /**
- * Build `register` calldata against the agent's UserRegistry.
- * Invoice name: `{label}.{agentNamespace}` e.g. `inv-01.alice.agentinvoice.eth`.
- * Resolver is Billie's shared PermissionedResolver (text records written after confirm).
+ * Prepare invoice registration for the agent:
+ * register calldata on agent UserRegistry with Billie's PermissionedResolver.
+ * Text records are written by Billie after submit confirms (not by the agent).
  */
 export async function buildInvoiceRegisterTx(input: {
   invoiceId: string;

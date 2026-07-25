@@ -1,8 +1,12 @@
 /**
- * ENS text record keys and values for Billie invoice subdomains.
- * Written on-chain to the Billie PermissionedResolver after register confirms.
+ * ENS text record keys/values for Billie invoice subdomains.
+ * Billie writes them via PermissionedResolver.multicall after the agent registers the name.
  */
-import { encodeFunctionData, namehash, type Hex } from "viem";
+import {
+  encodeFunctionData,
+  namehash,
+  type Hex,
+} from "viem";
 import { sepolia } from "viem/chains";
 import {
   BILLIE_ATTESTATION_ENS_TEXT_KEY,
@@ -61,7 +65,7 @@ export function buildInvoiceTextRecords(input: {
   };
 }
 
-const permissionedResolverAbi = [
+export const permissionedResolverAbi = [
   {
     type: "function",
     name: "setText",
@@ -92,18 +96,27 @@ const permissionedResolverAbi = [
   },
 ] as const;
 
-/**
- * Billie writes invoice text records on the shared PermissionedResolver.
- * Requires BILLIE_INVOICE_RESOLVER and ROLE_SET_TEXT for Billie on that resolver.
- */
+export class InvoiceTextsWriteError extends Error {
+  constructor(
+    message: string,
+    readonly code: "no_resolver" | "broadcast_failed" | "reverted",
+    readonly txHash?: Hex,
+  ) {
+    super(message);
+    this.name = "InvoiceTextsWriteError";
+  }
+}
+
+/** Billie writes all invoice text records in one PermissionedResolver.multicall. */
 export async function writeInvoiceTextRecords(input: {
   fullName: string;
   texts: InvoiceTextRecords;
-}): Promise<{ txHash: Hex; texts: InvoiceTextRecords }> {
+}): Promise<{ txHash: Hex }> {
   const resolver = getBillieInvoiceResolverAddress();
   if (!resolver) {
-    throw new Error(
+    throw new InvoiceTextsWriteError(
       "BILLIE_INVOICE_RESOLVER is not set — run pnpm ops:invoice-resolver",
+      "no_resolver",
     );
   }
 
@@ -117,17 +130,42 @@ export async function writeInvoiceTextRecords(input: {
   );
 
   const clients = createBillieSepoliaClients();
-  const txHash = await clients.walletClient.writeContract({
-    address: resolver,
-    abi: permissionedResolverAbi,
-    functionName: "multicall",
-    args: [calls],
-    account: clients.account,
-    chain: sepolia,
-  });
-  await waitSuccess(clients.publicClient, txHash, "invoice setText multicall");
+  let txHash: Hex;
+  try {
+    txHash = await clients.walletClient.writeContract({
+      address: resolver,
+      abi: permissionedResolverAbi,
+      functionName: "multicall",
+      args: [calls],
+      account: clients.account,
+      chain: sepolia,
+    });
+  } catch (error) {
+    throw new InvoiceTextsWriteError(
+      error instanceof Error
+        ? error.message
+        : "Failed to broadcast texts multicall",
+      "broadcast_failed",
+    );
+  }
 
-  return { txHash, texts: input.texts };
+  try {
+    await waitSuccess(
+      clients.publicClient,
+      txHash,
+      "invoice texts multicall",
+    );
+  } catch (error) {
+    throw new InvoiceTextsWriteError(
+      error instanceof Error
+        ? error.message
+        : "Texts multicall reverted or failed to confirm",
+      "reverted",
+      txHash,
+    );
+  }
+
+  return { txHash };
 }
 
 export async function readInvoiceTextRecords(
