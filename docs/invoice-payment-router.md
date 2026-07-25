@@ -117,8 +117,8 @@ v1 policy: Paid only via the router. External / manual `markPaid` can come later
 2. Operator runs payment-router deploy script → set `BILLIE_PAYMENT_ROUTER`.
 3. Status/resolve API: lazy `eth_call` to `paid` / `checkInvoice`.
 4. Smoke scripts:
-   - `pnpm agent:invoice -- <ns> <label> <atomicAmount> <currency> <token> [paymentAddress]`
-   - `pnpm invoice:status -- <invoice.full.name.eth>`
+   - `pnpm agent:invoice -- <namespace> <label> <atomicAmount> <currency> [paymentAddress]` (USDC only)
+   - `pnpm invoice:status -- <namespace> <invoiceLabel>`
    - `pnpm pay:invoice -- <invoice.full.name.eth> <payerPrivateKey>`
 
 ## Risks

@@ -131,6 +131,34 @@ export function getLinkedDomainByAgent(
   return byAgentAddress.get(normalizeAddress(agentAddress));
 }
 
+/**
+ * Resolve a namespace request against the agent's linked record.
+ * Accepts label (`alice`), full name (`alice.parent.eth`), or legacy forms.
+ * Returns null if the request does not match the linked namespace.
+ */
+export function matchLinkedNamespace(
+  linked: LinkedDomain,
+  requested: string,
+): LinkedDomain | null {
+  const trimmed = requested.trim().toLowerCase();
+  if (!trimmed) return null;
+
+  if (!trimmed.includes(".")) {
+    try {
+      return normalizeNamespaceLabel(trimmed) === linked.label ? linked : null;
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const resolved = resolveNamespaceClaim(trimmed, linked.parentName);
+    return resolved.name === linked.name ? linked : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getLinkedDomainsByHuman(humanId: string): LinkedDomain[] {
   const agents = byHumanId.get(humanId);
   if (!agents) return [];

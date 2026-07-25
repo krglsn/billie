@@ -4,7 +4,10 @@ import {
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
 import { checkBillieParentStatus } from "@/lib/billie-parent";
-import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
+import {
+  getLinkedDomainByAgent,
+  matchLinkedNamespace,
+} from "@/lib/domains";
 import {
   InvoicePrepareError,
   buildInvoiceRegisterTx,
@@ -26,6 +29,9 @@ type PrepareInvoiceBody = {
   currency?: unknown;
   token?: unknown;
   paymentAddress?: unknown;
+  /** Agent namespace label under Billie parent, e.g. `alice` (preferred). */
+  namespace?: unknown;
+  /** @deprecated Prefer `namespace` (label). Full ENS name still accepted. */
   domain?: unknown;
 };
 
@@ -33,14 +39,15 @@ type PrepareInvoiceBody = {
  * Prepare an invoice subdomain registration under the agent's namespace.
  *
  * Body: {
+ *   "namespace": "alice",
  *   "label": "inv-01",
  *   "amount": "1000000",
  *   "currency": "USDC",
  *   "token": "0x…",
- *   "paymentAddress"?: "0x…",
- *   "domain"?: "alice.parent.eth"
+ *   "paymentAddress"?: "0x…"
  * }
  *
+ * `namespace` is the agent label under BILLIE_PARENT_NAME (not the full ENS name).
  * `amount` is atomic units (e.g. 1 USDC with 6 decimals → "1000000").
  * `paymentAddress` defaults to the agent wallet.
  * `register` targets the agent UserRegistry → `inv-01.alice.parent.eth`.
@@ -85,45 +92,58 @@ export async function POST(request: Request) {
   }
 
   const linked = getLinkedDomainByAgent(agent.address);
-
-  let requestedDomain: string | undefined;
-  if (body.domain !== undefined) {
-    if (typeof body.domain !== "string") {
-      return NextResponse.json(
-        { error: "Invalid field: domain (string)" },
-        { status: 400 },
-      );
-    }
-    try {
-      requestedDomain = normalizeDomainName(body.domain);
-    } catch (error) {
-      return NextResponse.json(
-        {
-          error: "Invalid domain name",
-          detail: error instanceof Error ? error.message : "Unknown error",
-        },
-        { status: 400 },
-      );
-    }
-  }
-
-  if (!linked || (requestedDomain && linked.name !== requestedDomain)) {
+  if (!linked) {
     return NextResponse.json(
       {
-        error: "Agent has not claimed the specified namespace",
+        error: "Agent has not claimed a namespace",
         agentAddress: agent.address,
-        domain: requestedDomain,
       },
       { status: 409 },
     );
   }
 
-  const domain = linked;
+  if (body.namespace !== undefined && typeof body.namespace !== "string") {
+    return NextResponse.json(
+      { error: "Invalid field: namespace (string label)" },
+      { status: 400 },
+    );
+  }
+  if (body.domain !== undefined && typeof body.domain !== "string") {
+    return NextResponse.json(
+      { error: "Invalid field: domain (string)" },
+      { status: 400 },
+    );
+  }
+
+  const namespaceRaw =
+    typeof body.namespace === "string"
+      ? body.namespace
+      : typeof body.domain === "string"
+        ? body.domain
+        : undefined;
+
+  let domain = linked;
+  if (namespaceRaw !== undefined) {
+    const matched = matchLinkedNamespace(linked, namespaceRaw);
+    if (!matched) {
+      return NextResponse.json(
+        {
+          error: "Agent has not claimed the specified namespace",
+          agentAddress: agent.address,
+          namespace: namespaceRaw.trim().toLowerCase(),
+          linkedNamespace: linked.label,
+        },
+        { status: 409 },
+      );
+    }
+    domain = matched;
+  }
 
   if (!domain.subregistry) {
     return NextResponse.json(
       {
         error: "Linked namespace has no UserRegistry",
+        namespace: domain.label,
         domain: domain.name,
       },
       { status: 409 },
@@ -227,7 +247,8 @@ export async function POST(request: Request) {
           error: error.message,
           code: error.code,
           fullName,
-          namespace: domain.name,
+          namespace: domain.label,
+          domain: domain.name,
           subregistry: domain.subregistry,
         },
         { status },
@@ -269,7 +290,8 @@ export async function POST(request: Request) {
     token: invoice.token,
     paymentAddress: invoice.paymentAddress,
     rootDomain: invoice.rootDomain,
-    namespace: domain.name,
+    namespace: domain.label,
+    domain: domain.name,
     subregistry: domain.subregistry,
     resolver: prepared.resolver,
     texts: invoice.texts,

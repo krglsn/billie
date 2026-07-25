@@ -3,10 +3,12 @@
  *
  * Requires a claimed namespace for the agent (POST /api/domains first).
  *
- *   pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency> <token> [paymentAddress]
- *   pnpm agent:invoice -- alice.agentinvoice.eth inv-01 1000000 USDC 0xToken…
+ *   pnpm agent:invoice -- <namespace> <label> <amount> <currency> [paymentAddress]
+ *   pnpm agent:invoice -- agent_invoices invoice_01 1000000 USDC
  *
- * `amount` is atomic units. `paymentAddress` defaults to the agent wallet on the API.
+ * `namespace` is the agent label under BILLIE_PARENT_NAME (not the full ENS name).
+ * `amount` is atomic units. Only `USDC` is supported (Sepolia faucet token).
+ * `paymentAddress` defaults to the agent wallet on the API.
  *
  * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia register tx and POST /api/invoices/submit
  * (agent pays gas for register; Billie writes text records after confirm).
@@ -34,8 +36,11 @@ const TX_GAS = BigInt(process.env.BILLIE_TX_GAS ?? "200000");
 const TX_MAX_FEE_GWEI = process.env.BILLIE_TX_MAX_FEE_GWEI ?? "0.1";
 const TX_PRIORITY_FEE_GWEI = process.env.BILLIE_TX_PRIORITY_FEE_GWEI ?? "0.05";
 
+/** Circle USDC on Ethereum Sepolia. */
+const SEPOLIA_USDC = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" as const;
+
 function parseArgs(argv: string[]): {
-  domain: string;
+  namespace: string;
   label: string;
   amount: string;
   currency: string;
@@ -44,13 +49,28 @@ function parseArgs(argv: string[]): {
 } {
   // pnpm forwards a literal "--" when invoked as `pnpm agent:invoice -- …`
   const args = argv.slice(2).filter((a) => a !== "--");
-  const [domain, label, amount, currency, token, paymentAddress] = args;
-  if (!domain || !label || !amount || !currency || !token) {
+  const [namespace, label, amount, currencyRaw, paymentAddress] = args;
+  if (!namespace || !label || !amount || !currencyRaw) {
     throw new Error(
-      "Usage: pnpm agent:invoice -- <namespace.eth> <label> <amount> <currency> <token> [paymentAddress]",
+      "Usage: pnpm agent:invoice -- <namespace> <label> <amount> <currency> [paymentAddress]",
     );
   }
-  return { domain, label, amount, currency, token, paymentAddress };
+
+  const currency = currencyRaw.trim().toUpperCase();
+  if (currency !== "USDC") {
+    throw new Error(
+      `Unsupported currency "${currencyRaw}". Only USDC is supported (token ${SEPOLIA_USDC}).`,
+    );
+  }
+
+  return {
+    namespace,
+    label,
+    amount,
+    currency,
+    token: SEPOLIA_USDC,
+    paymentAddress,
+  };
 }
 
 async function main() {
@@ -68,10 +88,10 @@ async function main() {
     process.exit(1);
   }
 
-  const { domain, label, amount, currency, token, paymentAddress } = parsed;
+  const { namespace, label, amount, currency, token, paymentAddress } = parsed;
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
-  console.log(`Namespace: ${domain}`);
+  console.log(`Namespace: ${namespace}`);
 
   const agentkit = createAgentkitClient({
     signer: {
@@ -90,7 +110,7 @@ async function main() {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      domain,
+      namespace,
       label,
       amount,
       currency,
