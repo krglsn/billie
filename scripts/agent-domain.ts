@@ -1,34 +1,40 @@
 /**
- * Smoke-test POST /api/domains (claim / link ENS ownership).
+ * Smoke-test POST /api/domains (provision agent namespace under BILLIE_PARENT_NAME).
  *
- * Register the .eth name on Ethereum Sepolia with the agent wallet first, then:
- *   AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- billie
- *   AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- billie.eth
+ * Parent UserRegistry must already be ready (GET /api/health ok:true).
+ *
+ *   pnpm agent:domain -- alice
+ *   pnpm agent:domain -- alice.agentinvoice.eth
+ *
+ * Billie (BILLIE_PRIVATE_KEY) pays gas to deploy the agent UserRegistry and
+ * register `{label}.{parent}.eth`. Agent only needs AgentKit auth.
  */
 import { createAgentkitClient } from "@worldcoin/agentkit";
 import { privateKeyToAccount } from "viem/accounts";
 
 const API_URL = process.env.BILLIE_API_URL ?? "http://127.0.0.1:3000";
 const CHAIN_ID = process.env.AGENT_CHAIN_ID ?? "eip155:8453";
-const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 60_000);
+const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 180_000);
 
 async function main() {
   const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
   if (!privateKey) {
     console.error("Set AGENT_PRIVATE_KEY (register with AgentKit CLI first).");
-    console.error("Example: AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- billie");
+    console.error("Example: AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- alice");
     process.exit(1);
   }
 
-  const name = process.argv[2];
+  const args = process.argv.slice(2).filter((a) => a !== "--");
+  const name = args[0];
   if (!name) {
-    console.error("Usage: pnpm agent:domain -- <name>");
+    console.error("Usage: pnpm agent:domain -- <label|label.parent.eth>");
     process.exit(1);
   }
 
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
-  console.log(`Claiming domain link for: ${name}`);
+  console.log(`Claiming namespace: ${name}`);
+  console.log("(Billie will deploy UserRegistry + register on-chain — may take ~1–2 min)");
 
   const agentkit = createAgentkitClient({
     signer: {

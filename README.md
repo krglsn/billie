@@ -34,7 +34,7 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 |--------|------|------|-------|
 | `GET` | `/api/health` | public | liveness + Billie parent ENSv2 readiness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
-| `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
+| `POST` | `/api/domains` | AgentKit | provision agent namespace under parent + link |
 | `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
 | `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
 
@@ -66,26 +66,33 @@ curl -s http://127.0.0.1:3000/api/health | jq .
 `/api/invoices` requires a previously linked domain for the agent.
 Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
 
-### Domain claim / link
+### Domain claim / namespace provision
 
-Register the `.eth` name yourself on **Ethereum Sepolia ENSv2** (`app.ens.dev`) with the **same** wallet you use as the AgentKit agent, then link it:
+Billie owns `BILLIE_PARENT_NAME` (e.g. `agentinvoice.eth`) and its UserRegistry.
+Agents claim a **namespace** under that parent — Billie deploys their UserRegistry
+and registers `{label}.{parent}.eth` on-chain (Billie pays gas).
 
-1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional) + AgentKit.
-2. API verifies human-backed identity (AgentBook on World Chain).
-3. If the name is already linked, or this agent already has a domain → `409`.
-4. API reads ENSv2 `ETHRegistry.getState(labelhash)` on Sepolia and requires `owner == agentAddress`.
-5. On success, stores `humanId → agentAddress → domain` (plus indexes by name / agent) and returns the mapping.
+1. Ensure `/api/health` is `ok: true` (`pnpm ops:parent-registry` if needed).
+2. `POST /api/domains` with `{ "name": "alice" }` (or `alice.agentinvoice.eth`) + AgentKit.
+3. API verifies human-backed identity (AgentBook on World Chain).
+4. If the namespace is already linked, or this agent already has one → `409`.
+5. Billie deploys agent UserRegistry, grants `ROLE_REGISTRAR` to the agent, registers the label under the parent registry.
+6. Stores `humanId → agentAddress → namespace` (includes `subregistry` for later invoices).
 
 | Status | Meaning |
 |--------|---------|
 | `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
-| `409` | domain already linked, or agent already has a linked domain |
-| `404` | name not registered on Sepolia ENSv2 |
-| `403` | ENSv2 owner ≠ agent address |
-| `502` | Sepolia RPC / lookup failure |
-| `200` | linked; response includes `mapping` |
+| `409` | namespace already linked, label taken on-chain, or agent already has a namespace |
+| `503` | parent UserRegistry not ready / Billie key missing |
+| `502` | on-chain provision failed |
+| `200` | provisioned + linked; response includes `mapping`, `subregistry`, `txs` |
 
-Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet.
+```bash
+pnpm agent:domain -- alice
+# → 200 + alice.<BILLIE_PARENT_NAME> + subregistry
+```
+
+Invoice minting under the agent namespace is the next step (still uses stub path until updated).
 
 ### Invoice prepare + submit (minimal)
 
@@ -155,17 +162,17 @@ pnpm agent:me
 # → 200 + humanId
 ```
 
-### 6. Domain claim
+### 6. Namespace claim
 
-1. On Ethereum Sepolia ENSv2 (`app.ens.dev`), register `myagent.eth` to the **agent** address.
-2. Link it:
+1. Parent ready: `curl -s http://127.0.0.1:3000/api/health` → `ok: true`
+2. Claim a label under the parent:
 
 ```bash
-pnpm agent:domain -- myagent
-# → 200 + mapping { humanId, agentAddress, domain }
+pnpm agent:domain -- alice
+# → 200 + mapping { humanId, agentAddress, domain: "alice.<parent>.eth" } + subregistry
 
-pnpm agent:domain -- myagent
-# → 409 domain already linked (or agent already has a domain)
+pnpm agent:domain -- alice
+# → 409 already linked (or agent already has a namespace)
 ```
 
 ### Pass criteria
@@ -173,9 +180,5 @@ pnpm agent:domain -- myagent
 - [ ] `/api/health` → 200 when parent + UserRegistry ready (else 503 + `parent.checks`)
 - [ ] `/api/me` and `/api/domains` without AgentKit → 402
 - [ ] Registered agent → `/api/me` 200 + `humanId`
-- [ ] Agent-owned Sepolia ENSv2 name → `/api/domains` 200 + mapping
-- [ ] Same name twice → 409
-- [ ] Second domain for same agent → 409
-- [ ] Wrong owner / missing ENS → 403 / 404
-
-See [PLAN.md](./PLAN.md) for scope and follow-ups.
+- [ ] Human-backed agent → `/api/domains` provisions namespace + returns `subregistry`
+- [ ] Same namespace twice / second namespace for same agent → 409
