@@ -3,26 +3,36 @@ import {
   isNextResponse,
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
-import { stubDomainRegistrationParams } from "@/lib/domain-registration";
 import {
-  isDomainTaken,
+  isDomainLinked,
+  linkDomain,
   normalizeDomainName,
-  reserveDomain,
 } from "@/lib/domains";
+import { verifyAgentOwnsDomain } from "@/lib/ens";
 
-type CreateDomainBody = {
+type ClaimDomainBody = {
   name?: unknown;
 };
 
+/**
+ * Claim / link an already-registered ENS root domain on Ethereum Sepolia.
+ *
+ * Body: { "name": "billie.eth" }
+ *
+ * Checks:
+ * - AgentKit human-backed identity (402 / 401 / 403)
+ * - Domain not already linked in Billie (409)
+ * - On-chain ENS owner on Sepolia matches the agent address (404 / 403 / 502)
+ */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
   if (isNextResponse(agent)) {
     return agent;
   }
 
-  let body: CreateDomainBody;
+  let body: ClaimDomainBody;
   try {
-    body = (await request.json()) as CreateDomainBody;
+    body = (await request.json()) as ClaimDomainBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -47,20 +57,69 @@ export async function POST(request: Request) {
     );
   }
 
-  if (isDomainTaken(name)) {
+  if (isDomainLinked(name)) {
     return NextResponse.json(
-      { error: "Domain is already taken", name },
+      {
+        error: "Domain is already registered on Billie",
+        name,
+      },
       { status: 409 },
     );
   }
 
-  reserveDomain(name, agent.address, agent.humanId);
+  const ownership = await verifyAgentOwnsDomain(name, agent.address);
+  if (!ownership.ok) {
+    if (ownership.reason === "not_registered") {
+      return NextResponse.json(
+        {
+          error: "Domain is not registered on Ethereum Sepolia ENS",
+          name,
+          chainId: "eip155:11155111",
+        },
+        { status: 404 },
+      );
+    }
+    if (ownership.reason === "owner_mismatch") {
+      return NextResponse.json(
+        {
+          error: "Domain owner does not match agent address",
+          name,
+          agentAddress: agent.address,
+          ensOwner: ownership.owner,
+          chainId: "eip155:11155111",
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.json(
+      {
+        error: "Failed to verify ENS ownership on Sepolia",
+        name,
+        detail: ownership.detail,
+      },
+      { status: 502 },
+    );
+  }
 
-  return NextResponse.json(
-    stubDomainRegistrationParams({
-      name,
-      agentAddress: agent.address,
-      humanId: agent.humanId,
-    }),
-  );
+  const linked = linkDomain({
+    name,
+    agentAddress: agent.address,
+    humanId: agent.humanId,
+    chainId: ownership.chainId,
+    ensOwner: ownership.owner,
+    wrapped: ownership.wrapped,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    mapping: {
+      humanId: linked.humanId,
+      agentAddress: linked.agentAddress,
+      domain: linked.name,
+    },
+    chainId: linked.chainId,
+    ensOwner: linked.ensOwner,
+    wrapped: linked.wrapped,
+    linkedAt: linked.linkedAt,
+  });
 }

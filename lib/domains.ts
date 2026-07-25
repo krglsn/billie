@@ -1,11 +1,14 @@
-export type ReservedDomain = {
+export type LinkedDomain = {
   name: string;
   agentAddress: string;
   humanId: string;
-  reservedAt: string;
+  chainId: "eip155:11155111";
+  ensOwner: string;
+  wrapped: boolean;
+  linkedAt: string;
 };
 
-const reservedByName = new Map<string, ReservedDomain>();
+const linkedByName = new Map<string, LinkedDomain>();
 
 /** Normalize to lowercase; ensure a single trailing `.eth`. */
 export function normalizeDomainName(input: string): string {
@@ -31,30 +34,26 @@ export function normalizeDomainName(input: string): string {
   return `${withoutEth}.eth`;
 }
 
-export function getReservedDomain(name: string): ReservedDomain | undefined {
-  return reservedByName.get(name);
+export function getLinkedDomain(name: string): LinkedDomain | undefined {
+  return linkedByName.get(name);
 }
 
-export function isDomainTaken(name: string): boolean {
-  return reservedByName.has(name);
+export function isDomainLinked(name: string): boolean {
+  return linkedByName.has(name);
 }
 
-export function reserveDomain(
-  name: string,
-  agentAddress: string,
-  humanId: string,
-): ReservedDomain {
-  const existing = reservedByName.get(name);
+export function linkDomain(
+  input: Omit<LinkedDomain, "linkedAt">,
+): LinkedDomain {
+  const existing = linkedByName.get(input.name);
   if (existing) {
-    throw new Error("Domain is already taken");
+    throw new Error("Domain is already registered on Billie");
   }
 
-  const record: ReservedDomain = {
-    name,
-    agentAddress,
-    humanId,
-    reservedAt: new Date().toISOString(),
+  const record: LinkedDomain = {
+    ...input,
+    linkedAt: new Date().toISOString(),
   };
-  reservedByName.set(name, record);
+  linkedByName.set(input.name, record);
   return record;
 }
