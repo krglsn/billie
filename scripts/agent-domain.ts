@@ -1,6 +1,7 @@
 /**
- * Smoke-test POST /api/domains with AgentKit auth.
+ * Smoke-test POST /api/domains (claim / link ENS ownership).
  *
+ * Register the .eth name on Ethereum Sepolia with the agent wallet first, then:
  *   AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- billie
  *   AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- billie.eth
  */
@@ -9,7 +10,7 @@ import { privateKeyToAccount } from "viem/accounts";
 
 const API_URL = process.env.BILLIE_API_URL ?? "http://127.0.0.1:3000";
 const CHAIN_ID = process.env.AGENT_CHAIN_ID ?? "eip155:8453";
-const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 30_000);
+const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 60_000);
 
 async function main() {
   const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
@@ -27,7 +28,7 @@ async function main() {
 
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
-  console.log(`Creating domain params for: ${name}`);
+  console.log(`Claiming domain link for: ${name}`);
 
   const agentkit = createAgentkitClient({
     signer: {

@@ -19,7 +19,7 @@ Deferred pieces stay in the picture; only the API slice ships now.
 
 - **Stack:** Next.js (App Router) TypeScript — API routes only for now (no UI pages beyond a minimal health check if useful).
 - **Auth:** World AgentKit (`@worldcoin/agentkit`) — CAIP-122 challenge + AgentBook lookup on World Chain. Prefer `free` (or high `free-trial`) mode so local testing does not require x402 payment.
-- **On-chain:** root domains → **Ethereum Sepolia**; invoice subdomains → **Base Sepolia**. No contract design or deployment in this stage — endpoints return stub / in-memory records. Domain availability is in-memory for now; later it will read Ethereum Sepolia ENS.
+- **On-chain:** root domains → **Ethereum Sepolia** (agent registers offline, Billie **claims/links** after ENS ownership check); invoice subdomains → **Base Sepolia**. Domain link store is in-memory for Stage 1.
 - **Client for smoke test:** `pnpm agent:me` / `pnpm agent:domain` using `createAgentkitClient` + `agentkit.fetch` against `http://127.0.0.1:3000`.
 
 ## Stage 1 scope
@@ -34,8 +34,8 @@ Deferred pieces stay in the picture; only the API slice ships now.
 
 | Endpoint | Purpose | Stage 1 behavior |
 |----------|---------|------------------|
-| `POST /api/domains` | Root domain (e.g. `billie.eth`) on Ethereum Sepolia | Validate AgentKit; in-memory availability; return stub Sepolia registration params; agent submits tx itself |
-| `POST /api/invoices` | Invoice subdomain on Base Sepolia | Validate AgentKit; require agent domain; return stub Base Sepolia params / record |
+| `POST /api/domains` | Claim root ENS on Ethereum Sepolia | AgentKit; reject if already linked on Billie; verify on-chain owner == agent; store `humanId → agentAddress → domain` |
+| `POST /api/invoices` | Invoice subdomain on Base Sepolia | Validate AgentKit; require linked domain; return stub Base Sepolia params / record |
 
 Both return clear JSON success/error. Unauthenticated or non–human-backed requests get the AgentKit/x402 challenge (402) and fail verify without a registered AgentBook wallet.
 
