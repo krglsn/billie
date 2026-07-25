@@ -29,9 +29,9 @@ const CHAIN_ID = process.env.AGENT_CHAIN_ID ?? "eip155:8453";
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 60_000);
 const SUBMIT = process.env.BILLIE_SUBMIT_INVOICE === "1";
 const SKIP_GAS_ESTIMATE = process.env.BILLIE_SKIP_GAS_ESTIMATE === "1";
-const TX_GAS = BigInt(process.env.BILLIE_TX_GAS ?? "500000");
-const TX_MAX_FEE_GWEI = process.env.BILLIE_TX_MAX_FEE_GWEI ?? "50";
-const TX_PRIORITY_FEE_GWEI = process.env.BILLIE_TX_PRIORITY_FEE_GWEI ?? "2";
+const TX_GAS = BigInt(process.env.BILLIE_TX_GAS ?? "200000");
+const TX_MAX_FEE_GWEI = process.env.BILLIE_TX_MAX_FEE_GWEI ?? "0.1";
+const TX_PRIORITY_FEE_GWEI = process.env.BILLIE_TX_PRIORITY_FEE_GWEI ?? "0.05";
 
 function parseArgs(argv: string[]): {
   domain: string;
