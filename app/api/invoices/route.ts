@@ -36,7 +36,7 @@ export async function POST(request: Request) {
   if (!domain) {
     return NextResponse.json(
       {
-        error: "Agent has no linked domain — claim one via POST /api/domains first",
+        error: "Agent has not claimed the specified domain",
         agentAddress: agent.address,
       },
       { status: 409 },
