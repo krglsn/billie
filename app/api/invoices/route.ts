@@ -3,7 +3,7 @@ import {
   isNextResponse,
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
-import { getLinkedDomainByAgent } from "@/lib/domains";
+import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
 import { buildInvoiceRegisterTx } from "@/lib/invoice-tx";
 import {
   createInvoiceId,
@@ -16,14 +16,15 @@ type PrepareInvoiceBody = {
   label?: unknown;
   amount?: unknown;
   currency?: unknown;
+  domain?: unknown;
 };
 
 /**
  * Prepare an invoice subdomain registration tx (ENSv2, no text records yet).
  *
- * Body: { "label": "inv-01", "amount": "100", "currency": "USDC" }
+ * Body: { "label": "inv-01", "amount": "100", "currency": "USDC", "domain"?: "billie.eth" }
  *
- * Checks: AgentKit human-backed, agent has linked root domain, label free on Billie.
+ * Checks: AgentKit human-backed, agent has claimed the root domain, label free on Billie.
  * Returns stub attestation + calldata for the agent to sign.
  */
 export async function POST(request: Request) {
@@ -32,23 +33,51 @@ export async function POST(request: Request) {
     return agent;
   }
 
-  const domain = getLinkedDomainByAgent(agent.address);
-  if (!domain) {
-    return NextResponse.json(
-      {
-        error: "Agent has not claimed the specified domain",
-        agentAddress: agent.address,
-      },
-      { status: 409 },
-    );
-  }
-
   let body: PrepareInvoiceBody;
   try {
     body = (await request.json()) as PrepareInvoiceBody;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const linked = getLinkedDomainByAgent(agent.address);
+
+  let requestedDomain: string | undefined;
+  if (body.domain !== undefined) {
+    if (typeof body.domain !== "string") {
+      return NextResponse.json(
+        { error: "Invalid field: domain (string)" },
+        { status: 400 },
+      );
+    }
+    try {
+      requestedDomain = normalizeDomainName(body.domain);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: "Invalid domain name",
+          detail: error instanceof Error ? error.message : "Unknown error",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (
+    !linked ||
+    (requestedDomain && linked.name !== requestedDomain)
+  ) {
+    return NextResponse.json(
+      {
+        error: "Agent has not claimed the specified domain",
+        agentAddress: agent.address,
+        domain: requestedDomain,
+      },
+      { status: 409 },
+    );
+  }
+
+  const domain = linked;
 
   if (typeof body.label !== "string") {
     return NextResponse.json(

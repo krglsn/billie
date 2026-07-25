@@ -1,17 +1,14 @@
 /**
  * Smoke-test invoice prepare (+ optional submit).
  *
- * Requires a linked domain for the agent (POST /api/domains first).
+ * Requires a claimed domain for the agent (POST /api/domains first).
  *
  *   pnpm agent:invoice -- inv-01 100 USDC
+ *   pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
  *   BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- inv-01 100 USDC
  */
 import { createAgentkitClient } from "@worldcoin/agentkit";
-import {
-  createWalletClient,
-  http,
-  type Hex,
-} from "viem";
+import { createWalletClient, http, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 
@@ -20,6 +17,43 @@ const CHAIN_ID = process.env.AGENT_CHAIN_ID ?? "eip155:8453";
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 60_000);
 const SUBMIT = process.env.BILLIE_SUBMIT_INVOICE === "1";
 
+function parseArgs(argv: string[]): {
+  domain?: string;
+  label: string;
+  amount: string;
+  currency: string;
+} {
+  const args = argv.slice(2);
+  if (args.length === 0) {
+    throw new Error(
+      "Usage: pnpm agent:invoice -- [domain.eth] <label> [amount] [currency]",
+    );
+  }
+
+  // Optional root domain as first arg when it looks like *.eth
+  if (args[0]?.includes(".")) {
+    const domain = args[0]!;
+    const label = args[1];
+    if (!label) {
+      throw new Error(
+        "Usage: pnpm agent:invoice -- <domain.eth> <label> [amount] [currency]",
+      );
+    }
+    return {
+      domain,
+      label,
+      amount: args[2] ?? "100",
+      currency: args[3] ?? "USDC",
+    };
+  }
+
+  return {
+    label: args[0]!,
+    amount: args[1] ?? "100",
+    currency: args[2] ?? "USDC",
+  };
+}
+
 async function main() {
   const privateKey = process.env.AGENT_PRIVATE_KEY as `0x${string}` | undefined;
   if (!privateKey) {
@@ -27,16 +61,18 @@ async function main() {
     process.exit(1);
   }
 
-  const label = process.argv[2];
-  const amount = process.argv[3] ?? "100";
-  const currency = process.argv[4] ?? "USDC";
-  if (!label) {
-    console.error("Usage: pnpm agent:invoice -- <label> [amount] [currency]");
+  let parsed;
+  try {
+    parsed = parseArgs(process.argv);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
     process.exit(1);
   }
 
+  const { domain, label, amount, currency } = parsed;
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
+  if (domain) console.log(`Root domain: ${domain}`);
 
   const agentkit = createAgentkitClient({
     signer: {
@@ -52,7 +88,12 @@ async function main() {
   const prepareRes = await agentkit.fetch(`${API_URL}/api/invoices`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ label, amount, currency }),
+    body: JSON.stringify({
+      label,
+      amount,
+      currency,
+      ...(domain ? { domain } : {}),
+    }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const prepared = await prepareRes.json().catch(() => null);

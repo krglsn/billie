@@ -73,6 +73,7 @@ If the root name has no ENSv2 subregistry, calldata is still prepared (`stubCall
 
 ```bash
 pnpm agent:invoice -- inv-01 100 USDC
+pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
 BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- inv-02 50 USDC
 ```
 
