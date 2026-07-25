@@ -37,6 +37,7 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 | `POST` | `/api/domains` | AgentKit | provision agent namespace under parent + link |
 | `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
 | `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
+| `GET` | `/api/invoices/resolve` | public | ENS texts + computed payment status + approve/pay calldata |
 
 ### Parent domain readiness (`GET /api/health`)
 
@@ -100,18 +101,49 @@ pnpm agent:domain -- alice
 
 Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice.eth`.
 
+Settlement fields (written as ENS texts after submit):
+
+- `amount` — **atomic units** string (e.g. `1000000` for 1 USDC with 6 decimals)
+- `currency` — human ticker (`USDC`)
+- `token` — ERC-20 address
+- `paymentAddress` — optional; defaults to the agent wallet
+
 1. Deploy invoice resolver once: `pnpm ops:invoice-resolver` → set `BILLIE_INVOICE_RESOLVER` in `.env`, restart API.
-2. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
-3. `POST /api/invoices` → requires `canWriteInvoiceTexts`; returns attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver). `503` + `invoice_texts_unavailable` if resolver/roles not ready.
-4. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
-5. After confirm, Billie writes ENS text records via resolver `multicall` (`billie.amount`, `billie.attestation`, …). Differentiated `code` if register or texts fail.
+2. Deploy payment router: `pnpm ops:payment-router` → set `BILLIE_PAYMENT_ROUTER` (needs [Foundry](https://book.getfoundry.sh/) `forge`).
+3. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
+4. `POST /api/invoices` → requires `canWriteInvoiceTexts`; returns attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver). `503` + `invoice_texts_unavailable` if resolver/roles not ready.
+5. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
+6. After confirm, Billie writes ENS text records via resolver `multicall` (`billie.amount`, `billie.token`, `billie.attestation`, …). Differentiated `code` if register or texts fail.
 
 ```bash
 pnpm ops:invoice-resolver
 # add BILLIE_INVOICE_RESOLVER=0x... to .env and restart
 
-pnpm agent:invoice -- alice.agentinvoice.eth inv-01 100 USDC
-BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- alice.agentinvoice.eth inv-02 50 USDC
+pnpm ops:payment-router
+# add BILLIE_PAYMENT_ROUTER=0x... to .env and restart
+
+# Publish source on Sepolia Etherscan (methods + Solidity on Contract tab):
+# set ETHERSCAN_API_KEY in .env, then:
+pnpm ops:payment-router -- --verify-only
+
+pnpm agent:invoice -- alice.agentinvoice.eth inv-01 1000000 USDC 0xTokenAddress
+BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- alice.agentinvoice.eth inv-02 500000 USDC 0xTokenAddress
+```
+
+Design notes: [docs/invoice-payment-router.md](./docs/invoice-payment-router.md).
+
+### Pay invoice (Billie Pay)
+
+1. `GET /api/invoices/resolve?name=inv-01.alice.agentinvoice.eth` — reads ENS texts, `eth_call` `PaymentRouter.paid` / `checkInvoice`, returns computed `paymentStatus` and approve + `payInvoice` calldata.
+2. Payer approves the ERC-20 to the router, then calls `payInvoice(node)`.
+3. Re-resolve: `paymentStatus` becomes `paid` when `paid[node]` is true (no event listener).
+
+```bash
+# Status only (no wallet)
+pnpm invoice:status -- inv-01.alice.agentinvoice.eth
+
+# Approve + pay from a third-party wallet (private key on CLI)
+pnpm pay:invoice -- inv-01.alice.agentinvoice.eth 0xPayerPrivateKey
 ```
 
 ---

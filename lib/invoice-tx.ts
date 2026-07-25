@@ -69,6 +69,8 @@ export async function buildInvoiceRegisterTx(input: {
   label: string;
   amount: string;
   currency: string;
+  token: string;
+  paymentAddress: string;
   domain: LinkedDomain;
 }): Promise<PreparedInvoiceTx> {
   const subregistry = input.domain.subregistry as Address | undefined;
@@ -126,6 +128,8 @@ export async function buildInvoiceRegisterTx(input: {
     fullName,
     amount: input.amount,
     currency: input.currency,
+    token: input.token,
+    paymentAddress: input.paymentAddress,
     domain: input.domain,
     attestation,
   });

@@ -19,6 +19,9 @@ export default function Home() {
         <li>
           <code>POST /api/invoices/submit</code> — broadcast signed invoice tx
         </li>
+        <li>
+          <code>GET /api/invoices/resolve</code> — invoice texts + payment status + pay calldata
+        </li>
       </ul>
     </main>
   );
