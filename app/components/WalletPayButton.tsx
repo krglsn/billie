@@ -29,12 +29,16 @@ export function WalletPayButton({
   const [phase, setPhase] = useState<string | null>(null);
 
   if (paymentStatus === "paid") {
-    return <p className="muted">Paid</p>;
+    return (
+      <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-ok">
+        Paid
+      </p>
+    );
   }
 
   if (!pay) {
     return (
-      <p className="muted">
+      <p className="text-sm text-muted">
         Not payable{payReason ? `: ${payReason}` : ""}
       </p>
     );
@@ -83,24 +87,32 @@ export function WalletPayButton({
   }
 
   return (
-    <div className="pay-actions">
+    <div className="flex flex-col items-start gap-3">
       {busy ? <Spinner label={phase ?? "Working…"} /> : null}
       {!busy && !address ? (
-        <button type="button" onClick={onConnect}>
+        <button
+          type="button"
+          onClick={onConnect}
+          className="rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
+        >
           Connect wallet
         </button>
       ) : null}
       {!busy && address ? (
-        <button type="button" onClick={onApproveAndPay}>
+        <button
+          type="button"
+          onClick={onApproveAndPay}
+          className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-accent-hover"
+        >
           Approve &amp; Pay
         </button>
       ) : null}
       {address ? (
-        <p className="muted mono">
+        <p className="font-mono text-xs text-muted">
           Connected: {address.slice(0, 6)}…{address.slice(-4)}
         </p>
       ) : null}
-      {error ? <p className="error">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
     </div>
   );
 }

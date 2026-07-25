@@ -21,7 +21,7 @@ type InvoiceRow = {
 function RefreshIcon({ spinning }: { spinning?: boolean }) {
   return (
     <svg
-      className={spinning ? "icon-refresh-svg is-spinning" : "icon-refresh-svg"}
+      className={spinning ? "animate-spin" : undefined}
       viewBox="0 0 16 16"
       width="14"
       height="14"
@@ -33,6 +33,16 @@ function RefreshIcon({ spinning }: { spinning?: boolean }) {
       />
     </svg>
   );
+}
+
+function statusClass(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "paid") return "bg-emerald-50 text-ok ring-emerald-200";
+  if (s === "open") return "bg-sky-50 text-sky-800 ring-sky-200";
+  if (s === "cancelled" || s === "rejected") {
+    return "bg-rose-50 text-danger ring-rose-200";
+  }
+  return "bg-slate-50 text-slate-700 ring-slate-200";
 }
 
 export default function Home() {
@@ -166,130 +176,180 @@ export default function Home() {
   }, [refreshAgents]);
 
   return (
-    <main className="page">
-      <h1>Billie</h1>
-      <p className="lede">Pay invoices issued by human-backed agents.</p>
+    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <header className="mb-8">
+        <p className="text-sm font-medium tracking-wide text-accent">Billie</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">
+          Pay dashboard
+        </h1>
+        <p className="mt-2 max-w-xl text-muted">
+          Select a human-backed agent and domain, then settle open invoices on
+          Sepolia.
+        </p>
+      </header>
 
-      <div className="field">
-        <span>Agent</span>
-        {loadingAgents && agents.length === 0 ? (
-          <Spinner label="Loading agents…" />
-        ) : agents.length === 0 ? (
-          <div className="field-row">
-            <p className="muted field-row-grow">No agents found in database.</p>
-            <button
-              type="button"
-              className="icon-refresh"
-              aria-label="Refresh agents"
-              title="Refresh agents"
-              onClick={() => void refreshAgents()}
-              disabled={loadingAgents}
-            >
-              <RefreshIcon spinning={loadingAgents} />
-            </button>
+      <section className="rounded-2xl border border-line bg-surface p-5 shadow-sm sm:p-6">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-slate-700">Agent</label>
+            {loadingAgents && agents.length === 0 ? (
+              <Spinner label="Loading agents…" />
+            ) : agents.length === 0 ? (
+              <div className="flex items-center gap-2">
+                <p className="flex-1 text-sm text-muted">
+                  No agents found in database.
+                </p>
+                <button
+                  type="button"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-line bg-white text-slate-600 transition hover:border-slate-400 hover:text-ink disabled:opacity-50"
+                  aria-label="Refresh agents"
+                  title="Refresh agents"
+                  onClick={() => void refreshAgents()}
+                  disabled={loadingAgents}
+                >
+                  <RefreshIcon spinning={loadingAgents} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <select
+                  className="min-w-0 flex-1 rounded-lg border border-line bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
+                  value={agent}
+                  onChange={(e) => {
+                    setAgent(e.target.value);
+                    setDomain("");
+                  }}
+                >
+                  <option value="">Select agent…</option>
+                  {agents.map((a) => (
+                    <option key={a.agentAddress} value={a.agentAddress}>
+                      {a.agentAddress.slice(0, 10)}… — {a.humanId.slice(0, 10)}…
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-line bg-white text-slate-600 transition hover:border-slate-400 hover:text-ink disabled:opacity-50"
+                  aria-label="Refresh agents"
+                  title="Refresh agents"
+                  onClick={() => void refreshAgents()}
+                  disabled={loadingAgents}
+                >
+                  <RefreshIcon spinning={loadingAgents} />
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="field-row">
-            <select
-              value={agent}
-              onChange={(e) => {
-                setAgent(e.target.value);
-                setDomain("");
-              }}
-            >
-              <option value="">Select agent…</option>
-              {agents.map((a) => (
-                <option key={a.agentAddress} value={a.agentAddress}>
-                  {a.agentAddress.slice(0, 10)}… — {a.humanId.slice(0, 10)}…
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="icon-refresh"
-              aria-label="Refresh agents"
-              title="Refresh agents"
-              onClick={() => void refreshAgents()}
-              disabled={loadingAgents}
-            >
-              <RefreshIcon spinning={loadingAgents} />
-            </button>
-          </div>
-        )}
-      </div>
 
-      {agent ? (
-        <div className="field">
-          <span>Domain</span>
-          <div className="field-row">
-            <select
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              disabled={domains.length === 0 || loadingDomains}
-            >
-              <option value="">
-                {domains.length === 0 ? "No domains" : "Select domain…"}
-              </option>
-              {domains.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="icon-refresh"
-              aria-label="Refresh domains"
-              title="Refresh domains"
-              onClick={() => void refreshDomains()}
-              disabled={loadingDomains}
-            >
-              <RefreshIcon spinning={loadingDomains} />
-            </button>
-          </div>
+          {agent ? (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-slate-700">
+                Domain
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  className="min-w-0 flex-1 rounded-lg border border-line bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-slate-50 disabled:text-muted"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  disabled={domains.length === 0 || loadingDomains}
+                >
+                  <option value="">
+                    {domains.length === 0 ? "No domains" : "Select domain…"}
+                  </option>
+                  {domains.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-line bg-white text-slate-600 transition hover:border-slate-400 hover:text-ink disabled:opacity-50"
+                  aria-label="Refresh domains"
+                  title="Refresh domains"
+                  onClick={() => void refreshDomains()}
+                  disabled={loadingDomains}
+                >
+                  <RefreshIcon spinning={loadingDomains} />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
-      ) : null}
 
-      {error ? <p className="error">{error}</p> : null}
+        {error ? (
+          <p className="mt-4 text-sm text-danger">{error}</p>
+        ) : null}
+      </section>
 
       {agent && domain ? (
-        <section>
-          <h2>Invoices</h2>
+        <section className="mt-6">
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <h2 className="text-lg font-semibold tracking-tight">Invoices</h2>
+            <p className="font-mono text-xs text-muted">{domain}</p>
+          </div>
+
           {loadingInvoices ? (
-            <Spinner label="Loading invoices…" />
+            <div className="rounded-2xl border border-line bg-surface p-6">
+              <Spinner label="Loading invoices…" />
+            </div>
           ) : invoices.length === 0 ? (
-            <p className="muted">No invoices for this domain.</p>
+            <div className="rounded-2xl border border-dashed border-line bg-surface/70 px-5 py-8 text-sm text-muted">
+              No invoices for this domain.
+            </div>
           ) : (
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Amount</th>
-                  <th>Agent</th>
-                  <th>Human ID</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.fullName}>
-                    <td className="mono">{inv.fullName}</td>
-                    <td>{inv.amountLabel ?? "—"}</td>
-                    <td className="mono">{inv.agentAddress}</td>
-                    <td className="mono">{inv.humanId}</td>
-                    <td>{inv.paymentStatus}</td>
-                    <td>
-                      <Link
-                        href={`/invoice?name=${encodeURIComponent(inv.fullName)}`}
+            <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[40rem] text-left text-sm">
+                  <thead className="border-b border-line bg-slate-50/80 text-xs font-medium uppercase tracking-wide text-muted">
+                    <tr>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Amount</th>
+                      <th className="px-4 py-3">Agent</th>
+                      <th className="px-4 py-3">Human ID</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {invoices.map((inv) => (
+                      <tr
+                        key={inv.fullName}
+                        className="transition hover:bg-slate-50/60"
                       >
-                        Pay
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        <td className="px-4 py-3 font-mono text-xs sm:text-sm">
+                          {inv.fullName}
+                        </td>
+                        <td className="px-4 py-3 font-medium">
+                          {inv.amountLabel ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-muted">
+                          {inv.agentAddress}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs text-muted">
+                          {inv.humanId}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClass(inv.paymentStatus)}`}
+                          >
+                            {inv.paymentStatus}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link
+                            href={`/invoice?name=${encodeURIComponent(inv.fullName)}`}
+                            className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover"
+                          >
+                            Pay
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
         </section>
       ) : null}
