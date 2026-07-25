@@ -13,8 +13,8 @@ Human-backed agent invoice API (Stage 1).
 
 | Asset | Network | CAIP-2 |
 |-------|---------|--------|
-| Root ENS domain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
-| Invoice subdomain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
+| Parent ENS (`BILLIE_PARENT_NAME`) | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
+| Agent namespace + invoice subdomains | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
 | AgentBook lookup | World Chain | `eip155:480` |
 
 ## Setup
@@ -32,11 +32,36 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| `GET` | `/api/health` | public | liveness |
+| `GET` | `/api/health` | public | liveness + Billie parent ENSv2 readiness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
 | `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
 | `POST` | `/api/invoices` | AgentKit | prepare invoice subdomain tx + Billie EIP-712 attestation |
 | `POST` | `/api/invoices/submit` | AgentKit | verify signed tx, broadcast to Sepolia, wait briefly |
+
+### Parent domain readiness (`GET /api/health`)
+
+Billie is pivoting to a single parent name (`BILLIE_PARENT_NAME`, e.g. `billie.eth`) owned by `BILLIE_PRIVATE_KEY`. Health checks on-chain:
+
+1. Parent name registered on Sepolia ENSv2
+2. Owner matches `BILLIE_PRIVATE_KEY`
+3. A UserRegistry is attached (`getSubregistry`)
+4. Billie has `ROLE_REGISTRAR` on that registry (can provision agent namespaces)
+
+HTTP **200** when ready, **503** when any required check fails. Response includes `parent.checks[]`.
+
+```bash
+# .env: BILLIE_PRIVATE_KEY + BILLIE_PARENT_NAME=yourname.eth
+# Register yourname.eth on app.ens.dev to that same address first.
+
+curl -s http://127.0.0.1:3000/api/health | jq .
+# registered, no UserRegistry yet → ok:false, subregistry_attached fails
+
+pnpm ops:parent-registry
+# deploys UserRegistry, setParent, setSubregistry
+
+curl -s http://127.0.0.1:3000/api/health | jq .
+# → ok:true, canProvisionAgents:true
+```
 
 `/api/invoices` requires a previously linked domain for the agent.
 Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
@@ -94,7 +119,8 @@ pnpm dev --hostname 127.0.0.1 --port 3000
 
 ```bash
 curl -s http://127.0.0.1:3000/api/health
-# → {"ok":true,"service":"billie","stage":1}
+# → 200 + ok:true when BILLIE_PARENT_NAME is registered, owned by BILLIE_PRIVATE_KEY, and UserRegistry is attached
+# → 503 + ok:false + parent.checks[] when not ready (e.g. missing subregistry)
 ```
 
 ### 3. Unauthenticated protected routes → 402
@@ -144,7 +170,7 @@ pnpm agent:domain -- myagent
 
 ### Pass criteria
 
-- [ ] `/api/health` → 200
+- [ ] `/api/health` → 200 when parent + UserRegistry ready (else 503 + `parent.checks`)
 - [ ] `/api/me` and `/api/domains` without AgentKit → 402
 - [ ] Registered agent → `/api/me` 200 + `humanId`
 - [ ] Agent-owned Sepolia ENSv2 name → `/api/domains` 200 + mapping
