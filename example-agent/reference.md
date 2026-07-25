@@ -1,4 +1,4 @@
-# Billie agent skill — reference
+# Billie example agent — reference
 
 ## Env
 
@@ -34,8 +34,10 @@ CLI takes **human** USDC (`100`). Client sends atomic string (`100000000`) to th
 ## Install (without full Billie repo)
 
 ```bash
-cp -R .cursor/skills/billie-agent ~/.cursor/skills/billie-agent
-cd ~/.cursor/skills/billie-agent
+cp -R example-agent ~/example-agent
+cd ~/example-agent
 npm install
 cp .env.example .env
 ```
+
+Optional: copy to `~/.cursor/skills/example-agent` so Cursor auto-discovers the skill in any chat.

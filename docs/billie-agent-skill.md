@@ -1,17 +1,17 @@
 # Billie Cursor Agent Skill
 
-Portable Cursor Skill so users can claim a domain, create a USDC invoice, and check status from chat — without cloning the full Billie app.
+Portable example agent so users can claim a domain, create a USDC invoice, and check status from chat — without cloning the full Billie app.
 
 ## Approach
 
-Ship `.cursor/skills/billie-agent/` with:
+Ship a flat `example-agent/` folder with:
 
 - `SKILL.md` — agent instructions (triggers: domain, invoice, status)
 - `reference.md` — API / env notes
 - Mini client (`package.json` + scripts) using `@worldcoin/agentkit` and `viem` only
 - Hardcoded USDC in `scripts/tokens.ts` (address + decimals); `reference.md` mirrors it
 
-Users copy the skill to `~/.cursor/skills/billie-agent/`, run `npm i`, set `.env`, and chat from any folder against `BILLIE_API_URL`.
+Users copy `example-agent/`, run `npm i`, set `.env`, and chat against `BILLIE_API_URL`. Optionally place the copy under `~/.cursor/skills/example-agent` for Cursor skill discovery.
 
 ## Out of scope
 
@@ -22,9 +22,9 @@ Users copy the skill to `~/.cursor/skills/billie-agent/`, run `npm i`, set `.env
 
 ## Setup (once)
 
-1. Register agent wallet in AgentBook; put `AGENT_PRIVATE_KEY` in skill `.env`
+1. Register agent wallet in AgentBook; put `AGENT_PRIVATE_KEY` in `.env`
 2. Set `BILLIE_API_URL` (and Sepolia RPC for submit)
-3. Install skill deps: `cd ~/.cursor/skills/billie-agent && npm i`
+3. `cd example-agent && npm i`
 
 ## Chat commands → CLI
 
@@ -39,7 +39,7 @@ Invoice flow is prepare + sign + submit in one command. Amount is human units; c
 ## Layout
 
 ```
-.cursor/skills/billie-agent/
+example-agent/
 ├── SKILL.md
 ├── reference.md
 ├── package.json

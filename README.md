@@ -30,7 +30,7 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sep
 
 ## Chat client (Cursor Skill)
 
-Use Billie from any Cursor chat without the full app checkout: copy [`.cursor/skills/billie-agent`](./.cursor/skills/billie-agent) to `~/.cursor/skills/billie-agent`, `npm install`, set `.env`, then say e.g. `create domain alice` / `create invoice inv01 for 100 USDC` / `check invoice status`. Plan: [`docs/billie-agent-skill.md`](./docs/billie-agent-skill.md).
+Use Billie from any Cursor chat without the full app checkout: copy [`example-agent/`](./example-agent), `npm install`, set `.env`, then say e.g. `create domain alice` / `create invoice inv01 for 100 USDC` / `check invoice status`. Optionally put the copy under `~/.cursor/skills/example-agent`. Plan: [`docs/billie-agent-skill.md`](./docs/billie-agent-skill.md).
 
 ## Endpoints (Stage 1)
 

@@ -1,11 +1,11 @@
 ---
-name: billie-agent
+name: example-agent
 description: Claim Billie ENS namespaces, create USDC invoices (prepare/sign/submit), and check invoice status via the Billie API. Use when the user mentions Billie, create domain, claim namespace, create invoice, invoice status, or AgentKit agent invoices.
 ---
 
-# Billie Agent
+# Billie example agent
 
-Talk to a deployed Billie API from chat. Run all commands from this skill directory.
+Talk to a deployed Billie API from chat. Run all commands from this directory.
 
 ## Prerequisites
 
@@ -17,8 +17,6 @@ Talk to a deployed Billie API from chat. Run all commands from this skill direct
 Never print `AGENT_PRIVATE_KEY` in replies.
 
 ## Commands
-
-Run from the skill root (`~/.cursor/skills/billie-agent` or this folder in the repo).
 
 | User intent | Command |
 |-------------|---------|
