@@ -72,9 +72,10 @@ Note: names registered only in classic ENSv1 will not resolve here. Owner must b
 If the root name has no ENSv2 subregistry, calldata is still prepared (`stubCalldata: true`) and may revert on-chain — enough to test the API scheme.
 
 ```bash
-pnpm agent:invoice -- inv-01 100 USDC
 pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
-BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- inv-02 50 USDC
+BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- agentinvoice3.eth inv-02 50 USDC
+# Stub calldata reverts in estimateGas — force fees to broadcast and see on-chain revert:
+BILLIE_SUBMIT_INVOICE=1 BILLIE_SKIP_GAS_ESTIMATE=1 pnpm agent:invoice -- agentinvoice3.eth inv-05 50 USDC
 ```
 
 ---

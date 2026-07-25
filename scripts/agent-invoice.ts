@@ -3,12 +3,24 @@
  *
  * Requires a claimed domain for the agent (POST /api/domains first).
  *
- *   pnpm agent:invoice -- inv-01 100 USDC
+ *   pnpm agent:invoice -- <domain.eth> <label> <amount> <currency>
  *   pnpm agent:invoice -- agentinvoice3.eth inv-01 100 USDC
- *   BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- inv-01 100 USDC
+ *
+ * With BILLIE_SUBMIT_INVOICE=1: sign Sepolia tx and POST /api/invoices/submit.
+ * Stub calldata often reverts in eth_estimateGas — use:
+ *
+ *   BILLIE_SUBMIT_INVOICE=1 BILLIE_SKIP_GAS_ESTIMATE=1 pnpm agent:invoice -- agentinvoice3.eth inv-05 50 USDC
+ *
+ * Optional: BILLIE_TX_GAS, BILLIE_TX_MAX_FEE_GWEI, BILLIE_TX_PRIORITY_FEE_GWEI.
  */
 import { createAgentkitClient } from "@worldcoin/agentkit";
-import { createWalletClient, http, type Hex } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  parseGwei,
+  type Hex,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 
@@ -16,43 +28,26 @@ const API_URL = process.env.BILLIE_API_URL ?? "http://127.0.0.1:3000";
 const CHAIN_ID = process.env.AGENT_CHAIN_ID ?? "eip155:8453";
 const TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 60_000);
 const SUBMIT = process.env.BILLIE_SUBMIT_INVOICE === "1";
+const SKIP_GAS_ESTIMATE = process.env.BILLIE_SKIP_GAS_ESTIMATE === "1";
+const TX_GAS = BigInt(process.env.BILLIE_TX_GAS ?? "500000");
+const TX_MAX_FEE_GWEI = process.env.BILLIE_TX_MAX_FEE_GWEI ?? "50";
+const TX_PRIORITY_FEE_GWEI = process.env.BILLIE_TX_PRIORITY_FEE_GWEI ?? "2";
 
 function parseArgs(argv: string[]): {
-  domain?: string;
+  domain: string;
   label: string;
   amount: string;
   currency: string;
 } {
   // pnpm forwards a literal "--" when invoked as `pnpm agent:invoice -- …`
   const args = argv.slice(2).filter((a) => a !== "--");
-  if (args.length === 0) {
+  const [domain, label, amount, currency] = args;
+  if (!domain || !label || !amount || !currency) {
     throw new Error(
-      "Usage: pnpm agent:invoice -- [domain.eth] <label> [amount] [currency]",
+      "Usage: pnpm agent:invoice -- <domain.eth> <label> <amount> <currency>",
     );
   }
-
-  // Optional root domain as first arg when it looks like *.eth
-  if (args[0]?.includes(".")) {
-    const domain = args[0]!;
-    const label = args[1];
-    if (!label) {
-      throw new Error(
-        "Usage: pnpm agent:invoice -- <domain.eth> <label> [amount] [currency]",
-      );
-    }
-    return {
-      domain,
-      label,
-      amount: args[2] ?? "100",
-      currency: args[3] ?? "USDC",
-    };
-  }
-
-  return {
-    label: args[0]!,
-    amount: args[1] ?? "100",
-    currency: args[2] ?? "USDC",
-  };
+  return { domain, label, amount, currency };
 }
 
 async function main() {
@@ -73,7 +68,7 @@ async function main() {
   const { domain, label, amount, currency } = parsed;
   const account = privateKeyToAccount(privateKey);
   console.log(`Agent address: ${account.address}`);
-  if (domain) console.log(`Root domain: ${domain}`);
+  console.log(`Root domain: ${domain}`);
 
   const agentkit = createAgentkitClient({
     signer: {
@@ -89,12 +84,7 @@ async function main() {
   const prepareRes = await agentkit.fetch(`${API_URL}/api/invoices`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      label,
-      amount,
-      currency,
-      ...(domain ? { domain } : {}),
-    }),
+    body: JSON.stringify({ domain, label, amount, currency }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   const prepared = await prepareRes.json().catch(() => null);
@@ -107,19 +97,44 @@ async function main() {
     process.exit(0);
   }
 
+  const rpc = process.env.ETHEREUM_SEPOLIA_RPC_URL;
   const wallet = createWalletClient({
     account,
     chain: sepolia,
-    transport: http(process.env.ETHEREUM_SEPOLIA_RPC_URL),
+    transport: http(rpc),
   });
 
-  // Fill nonce / gas / EIP-1559 fees — bare signTransaction cannot infer type.
-  const request = await wallet.prepareTransactionRequest({
-    to: prepared.tx.to,
-    data: prepared.tx.data,
-    value: BigInt(prepared.tx.value ?? 0),
-  });
-  const signedTx = await wallet.signTransaction(request);
+  let signedTx: Hex;
+  if (SKIP_GAS_ESTIMATE) {
+    const publicClient = createPublicClient({
+      chain: sepolia,
+      transport: http(rpc),
+    });
+    const nonce = await publicClient.getTransactionCount({
+      address: account.address,
+    });
+    console.log(
+      `\nSigning without estimateGas (gas=${TX_GAS}, maxFee=${TX_MAX_FEE_GWEI} gwei, tip=${TX_PRIORITY_FEE_GWEI} gwei, nonce=${nonce})...`,
+    );
+    signedTx = await wallet.signTransaction({
+      type: "eip1559",
+      chainId: sepolia.id,
+      to: prepared.tx.to,
+      data: prepared.tx.data,
+      value: BigInt(prepared.tx.value ?? 0),
+      nonce,
+      gas: TX_GAS,
+      maxFeePerGas: parseGwei(TX_MAX_FEE_GWEI),
+      maxPriorityFeePerGas: parseGwei(TX_PRIORITY_FEE_GWEI),
+    });
+  } else {
+    const request = await wallet.prepareTransactionRequest({
+      to: prepared.tx.to,
+      data: prepared.tx.data,
+      value: BigInt(prepared.tx.value ?? 0),
+    });
+    signedTx = await wallet.signTransaction(request);
+  }
 
   console.log("\nSubmitting signed tx...");
   const submitRes = await agentkit.fetch(`${API_URL}/api/invoices/submit`, {
@@ -127,7 +142,7 @@ async function main() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       invoiceId: prepared.invoiceId,
-      signedTx: signedTx as Hex,
+      signedTx,
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS + 60_000),
   });
