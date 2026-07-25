@@ -7,8 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "agent:me": "tsx --env-file=.env scripts/agent-me.ts",
-    "agent:domain": "tsx --env-file=.env scripts/agent-domain.ts"
+    "agent:me": "node --env-file=.env --import tsx scripts/agent-me.ts",
+    "agent:domain": "node --env-file=.env --import tsx scripts/agent-domain.ts"
   },
   "dependencies": {
     "@worldcoin/agentkit": "^0.2.0",
