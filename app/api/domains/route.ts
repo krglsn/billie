@@ -23,6 +23,7 @@ type ClaimDomainBody = {
  * - AgentKit human-backed identity (402 / 401 / 403)
  * - Domain not already linked in Billie (409)
  * - On-chain ENS owner on Sepolia matches the agent address (404 / 403 / 502)
+ * - Domain is wrapped in the ENS NameWrapper (422) — required for invoice subdomains
  */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
@@ -98,6 +99,21 @@ export async function POST(request: Request) {
         detail: ownership.detail,
       },
       { status: 502 },
+    );
+  }
+
+  if (!ownership.wrapped) {
+    return NextResponse.json(
+      {
+        error:
+          "Domain must be wrapped in the ENS NameWrapper before it can be linked",
+        name,
+        ensOwner: ownership.owner,
+        wrapped: false,
+        chainId: "eip155:11155111",
+        hint: "Wrap the name on Ethereum Sepolia, then retry the claim",
+      },
+      { status: 422 },
     );
   }
 

@@ -47,8 +47,9 @@ Register the `.eth` name yourself on **Ethereum Sepolia** with the agent wallet,
 1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional) + AgentKit.
 2. API verifies human-backed identity (AgentBook on World Chain).
 3. If the name is already linked in Billie → `409`.
-4. API reads ENS owner on Sepolia (unwraps NameWrapper when needed) and requires `owner == agentAddress`.
-5. On success, stores mapping `humanId → agentAddress → domain` and returns it.
+4. API reads ENS owner on Sepolia (resolves NameWrapper when needed) and requires `owner == agentAddress`.
+5. Domain must be **wrapped** in the ENS NameWrapper (needed later for invoice subdomains).
+6. On success, stores mapping `humanId → agentAddress → domain` and returns it.
 
 | Status | Meaning |
 |--------|---------|
@@ -56,6 +57,7 @@ Register the `.eth` name yourself on **Ethereum Sepolia** with the agent wallet,
 | `409` | domain already linked on Billie |
 | `404` | name not registered on Sepolia ENS |
 | `403` | ENS owner ≠ agent address |
+| `422` | domain is not wrapped in NameWrapper |
 | `502` | Sepolia RPC / lookup failure |
 | `200` | linked; response includes `mapping` |
 
