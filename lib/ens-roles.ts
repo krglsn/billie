@@ -44,6 +44,29 @@ export const AGENT_NAMESPACE_REGISTRAR_ROLES =
 /** Roles granted to the agent as owner of `{label}.parent.eth`. */
 export const AGENT_NAMESPACE_NAME_ROLES = ROLE_SET_RESOLVER | ROLE_RENEW;
 
+/**
+ * PermissionedResolver roles (nybble-packed, same EAC layout).
+ * @see ensdomains-contracts-v2 deployment ROLES.RESOLVER
+ */
+export const RESOLVER_ROLE_SET_ADDR = BigInt(1) << BigInt(0);
+export const RESOLVER_ROLE_SET_TEXT = BigInt(1) << BigInt(4);
+export const RESOLVER_ROLE_SET_CONTENTHASH = BigInt(1) << BigInt(8);
+export const RESOLVER_ROLE_CLEAR = BigInt(1) << BigInt(32);
+export const RESOLVER_ROLE_UPGRADE = BigInt(1) << BigInt(124);
+
+/** Billie admin roles on the shared invoice PermissionedResolver. */
+export const BILLIE_INVOICE_RESOLVER_ROLES =
+  RESOLVER_ROLE_SET_ADDR |
+  (RESOLVER_ROLE_SET_ADDR << BigInt(128)) |
+  RESOLVER_ROLE_SET_TEXT |
+  (RESOLVER_ROLE_SET_TEXT << BigInt(128)) |
+  RESOLVER_ROLE_SET_CONTENTHASH |
+  (RESOLVER_ROLE_SET_CONTENTHASH << BigInt(128)) |
+  RESOLVER_ROLE_CLEAR |
+  (RESOLVER_ROLE_CLEAR << BigInt(128)) |
+  RESOLVER_ROLE_UPGRADE |
+  (RESOLVER_ROLE_UPGRADE << BigInt(128));
+
 export const enhancedAccessControlAbi = [
   {
     type: "function",

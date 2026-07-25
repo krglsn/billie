@@ -10,6 +10,7 @@ import {
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
 import { createSepoliaPublicClient } from "@/lib/ens";
+import { writeInvoiceTextRecords } from "@/lib/invoice-texts";
 import { getInvoice, updateInvoice } from "@/lib/invoices";
 
 type SubmitInvoiceBody = {
@@ -216,6 +217,29 @@ export async function POST(request: Request) {
       txHash,
     });
 
+    let textsWritten = false;
+    let textsTxHash: `0x${string}` | undefined;
+    let textsError: string | undefined;
+    try {
+      const written = await writeInvoiceTextRecords({
+        fullName: confirmed.fullName,
+        texts: confirmed.texts,
+      });
+      textsWritten = true;
+      textsTxHash = written.txHash;
+      updateInvoice(invoice.id, {
+        textsWritten: true,
+        textsTxHash: written.txHash,
+      });
+    } catch (error) {
+      textsError =
+        error instanceof Error ? error.message : "Failed to write text records";
+      updateInvoice(invoice.id, {
+        textsWritten: false,
+        textsError,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       invoiceId: confirmed.id,
@@ -223,6 +247,10 @@ export async function POST(request: Request) {
       txHash,
       fullName: confirmed.fullName,
       blockNumber: receipt.blockNumber.toString(),
+      texts: confirmed.texts,
+      textsWritten,
+      textsTxHash,
+      textsError,
       stubCalldata: confirmed.stubCalldata,
     });
   } catch {

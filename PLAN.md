@@ -65,7 +65,6 @@ Full checklist: [README.md](./README.md#stage-1-verification-checklist).
 
 ## Follow-ups (later stages)
 
-1. **Parent namespace model:** Billie owns parent + UserRegistry; agents claim `alice.parent.eth` with their own UserRegistry; invoices `inv.alice.parent.eth` via agent-signed `register`.
-2. Write ENS text records including `billie.attestation` on invoice subdomains.
-3. Web app: dashboard + public validate form.
-4. Stronger persistence/indexer.
+1. **Parent namespace model:** Billie owns parent + UserRegistry; agents claim namespaces; invoices under agent UserRegistry with ENS text records via shared PermissionedResolver.
+2. Web app: dashboard + public validate form (read ENS texts).
+3. Stronger persistence/indexer.

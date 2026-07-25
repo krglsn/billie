@@ -4,8 +4,16 @@ import {
   type InvoiceAttestation,
 } from "@/lib/billie-attestation";
 import type { LinkedDomain } from "@/lib/domains";
-import { Status, getRegistryLabelState } from "@/lib/ens";
+import {
+  Status,
+  getBillieInvoiceResolverAddress,
+  getRegistryLabelState,
+} from "@/lib/ens";
 import { AGENT_NAMESPACE_NAME_ROLES } from "@/lib/ens-roles";
+import {
+  buildInvoiceTextRecords,
+  type InvoiceTextRecords,
+} from "@/lib/invoice-texts";
 
 const registerAbi = [
   {
@@ -30,16 +38,21 @@ export type PreparedInvoiceTx = {
   value: "0";
   chainId: "eip155:11155111";
   fullName: string;
+  resolver: Address;
+  texts: InvoiceTextRecords;
   /** Always false for namespace invoices (agent UserRegistry is required). */
   stubCalldata: false;
-  /** Off-chain for now; later ENS text `billie.attestation`. */
   attestation: InvoiceAttestation;
 };
 
 export class InvoicePrepareError extends Error {
   constructor(
     message: string,
-    readonly code: "no_subregistry" | "label_taken" | "lookup_failed",
+    readonly code:
+      | "no_subregistry"
+      | "no_resolver"
+      | "label_taken"
+      | "lookup_failed",
   ) {
     super(message);
     this.name = "InvoicePrepareError";
@@ -49,6 +62,7 @@ export class InvoicePrepareError extends Error {
 /**
  * Build `register` calldata against the agent's UserRegistry.
  * Invoice name: `{label}.{agentNamespace}` e.g. `inv-01.alice.agentinvoice.eth`.
+ * Resolver is Billie's shared PermissionedResolver (text records written after confirm).
  */
 export async function buildInvoiceRegisterTx(input: {
   invoiceId: string;
@@ -62,6 +76,14 @@ export async function buildInvoiceRegisterTx(input: {
     throw new InvoicePrepareError(
       "Linked namespace has no UserRegistry — reclaim via POST /api/domains",
       "no_subregistry",
+    );
+  }
+
+  const resolver = getBillieInvoiceResolverAddress();
+  if (!resolver) {
+    throw new InvoicePrepareError(
+      "BILLIE_INVOICE_RESOLVER is not set — run pnpm ops:invoice-resolver",
+      "no_resolver",
     );
   }
 
@@ -88,23 +110,7 @@ export async function buildInvoiceRegisterTx(input: {
 
   const oneYear =
     BigInt(Math.floor(Date.now() / 1000)) + BigInt(365 * 24 * 60 * 60);
-  // Prefer not to outlive a short on-chain namespace expiry when known later;
-  // for now use one year (parent expiry already capped at namespace provision).
   const expiry = oneYear;
-
-  const data = encodeFunctionData({
-    abi: registerAbi,
-    functionName: "register",
-    args: [
-      input.label,
-      input.domain.agentAddress as Address,
-      zeroAddress,
-      // Text records (incl. billie.attestation) come later — resolver unset.
-      zeroAddress,
-      AGENT_NAMESPACE_NAME_ROLES,
-      expiry,
-    ],
-  });
 
   const attestation = await signInvoiceAttestation({
     invoiceId: input.invoiceId,
@@ -115,12 +121,36 @@ export async function buildInvoiceRegisterTx(input: {
     humanId: input.domain.humanId,
   });
 
+  const texts = buildInvoiceTextRecords({
+    invoiceId: input.invoiceId,
+    fullName,
+    amount: input.amount,
+    currency: input.currency,
+    domain: input.domain,
+    attestation,
+  });
+
+  const data = encodeFunctionData({
+    abi: registerAbi,
+    functionName: "register",
+    args: [
+      input.label,
+      input.domain.agentAddress as Address,
+      zeroAddress,
+      resolver,
+      AGENT_NAMESPACE_NAME_ROLES,
+      expiry,
+    ],
+  });
+
   return {
     to: subregistry,
     data,
     value: "0",
     chainId: "eip155:11155111",
     fullName,
+    resolver,
+    texts,
     stubCalldata: false,
     attestation,
   };

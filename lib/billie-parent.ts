@@ -4,6 +4,7 @@ import { type Address } from "viem";
 import {
   createSepoliaPublicClient,
   ethLabelFromName,
+  getBillieInvoiceResolverAddress,
   getEnsV2OwnerOnSepolia,
   getEthRegistryAddress,
   getEthSubregistry,
@@ -13,6 +14,7 @@ import {
 import {
   ROLE_REGISTRAR,
   ROLE_SET_SUBREGISTRY,
+  RESOLVER_ROLE_SET_TEXT,
   enhancedAccessControlAbi,
 } from "@/lib/ens-roles";
 
@@ -22,7 +24,9 @@ export type ParentCheckId =
   | "owner_matches_billie"
   | "subregistry_attached"
   | "billie_is_registrar"
-  | "billie_can_set_subregistry";
+  | "billie_can_set_subregistry"
+  | "invoice_resolver_configured"
+  | "billie_can_set_invoice_text";
 
 export type ParentCheck = {
   id: ParentCheckId;
@@ -40,10 +44,12 @@ export type BillieParentStatus = {
   resource: string | null;
   expiry: string | null;
   subregistry: Address | null;
+  invoiceResolver: Address | null;
   ethRegistry: Address;
   verifiableFactory: Address;
   userRegistryImpl: Address;
   canProvisionAgents: boolean;
+  canWriteInvoiceTexts: boolean;
   checks: ParentCheck[];
 };
 
@@ -94,10 +100,12 @@ export async function checkBillieParentStatus(): Promise<BillieParentStatus> {
     resource: null,
     expiry: null,
     subregistry: null,
+    invoiceResolver: getBillieInvoiceResolverAddress(),
     ethRegistry,
     verifiableFactory,
     userRegistryImpl,
     canProvisionAgents: false,
+    canWriteInvoiceTexts: false,
     checks,
   };
 
@@ -109,7 +117,7 @@ export async function checkBillieParentStatus(): Promise<BillieParentStatus> {
         ? "BILLIE_PRIVATE_KEY missing or invalid"
         : "BILLIE_PARENT_NAME missing or invalid (expected label.eth)",
     });
-    return finish(base, checks);
+    return await finish(base, checks);
   }
 
   checks.push({ id: "env_configured", ok: true });
@@ -123,7 +131,7 @@ export async function checkBillieParentStatus(): Promise<BillieParentStatus> {
       ok: false,
       detail: error instanceof Error ? error.message : "Invalid parent name",
     });
-    return finish({ ...base, name }, checks);
+    return await finish({ ...base, name }, checks);
   }
 
   base.label = label;
@@ -141,7 +149,7 @@ export async function checkBillieParentStatus(): Promise<BillieParentStatus> {
         ok: false,
         detail: `Not registered on ETHRegistry (${ethRegistry})`,
       });
-      return finish(base, checks);
+      return await finish(base, checks);
     }
 
     checks.push({ id: "name_registered", ok: true });
@@ -198,7 +206,7 @@ export async function checkBillieParentStatus(): Promise<BillieParentStatus> {
         ok: false,
         detail: "Skipped — no subregistry",
       });
-      return finish(base, checks);
+      return await finish(base, checks);
     }
 
     checks.push({ id: "subregistry_attached", ok: true });
@@ -228,21 +236,66 @@ export async function checkBillieParentStatus(): Promise<BillieParentStatus> {
       });
     }
 
-    return finish(base, checks);
+    return await finish(base, checks);
   } catch (error) {
     checks.push({
       id: "name_registered",
       ok: false,
       detail: error instanceof Error ? error.message : "RPC lookup failed",
     });
-    return finish(base, checks);
+    return await finish(base, checks);
   }
 }
 
-function finish(
+async function finish(
   base: BillieParentStatus,
   checks: ParentCheck[],
-): BillieParentStatus {
+): Promise<BillieParentStatus> {
+  const invoiceResolver = getBillieInvoiceResolverAddress();
+  base.invoiceResolver = invoiceResolver;
+
+  if (!invoiceResolver || !base.billieAddress) {
+    checks.push({
+      id: "invoice_resolver_configured",
+      ok: false,
+      detail: invoiceResolver
+        ? "Billie address missing"
+        : "BILLIE_INVOICE_RESOLVER missing — run pnpm ops:invoice-resolver",
+    });
+    checks.push({
+      id: "billie_can_set_invoice_text",
+      ok: false,
+      detail: "Skipped — invoice resolver not ready",
+    });
+  } else {
+    checks.push({ id: "invoice_resolver_configured", ok: true });
+    try {
+      const client = createSepoliaPublicClient();
+      const canSetText = await client.readContract({
+        address: invoiceResolver,
+        abi: enhancedAccessControlAbi,
+        functionName: "hasRootRoles",
+        args: [RESOLVER_ROLE_SET_TEXT, base.billieAddress],
+      });
+      checks.push({
+        id: "billie_can_set_invoice_text",
+        ok: canSetText,
+        detail: canSetText
+          ? undefined
+          : `Billie lacks ROLE_SET_TEXT on invoice resolver ${invoiceResolver}`,
+      });
+    } catch (error) {
+      checks.push({
+        id: "billie_can_set_invoice_text",
+        ok: false,
+        detail:
+          error instanceof Error
+            ? error.message
+            : "Failed to read ROLE_SET_TEXT on invoice resolver",
+      });
+    }
+  }
+
   const required: ParentCheckId[] = [
     "env_configured",
     "name_registered",
@@ -252,10 +305,15 @@ function finish(
   ];
   const byId = new Map(checks.map((c) => [c.id, c]));
   const ok = required.every((id) => byId.get(id)?.ok === true);
+  const canWriteInvoiceTexts =
+    byId.get("invoice_resolver_configured")?.ok === true &&
+    byId.get("billie_can_set_invoice_text")?.ok === true;
+
   return {
     ...base,
     checks,
     ok,
     canProvisionAgents: ok,
+    canWriteInvoiceTexts,
   };
 }

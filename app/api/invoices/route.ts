@@ -147,8 +147,8 @@ export async function POST(request: Request) {
       const status =
         error.code === "label_taken"
           ? 409
-          : error.code === "no_subregistry"
-            ? 409
+          : error.code === "no_subregistry" || error.code === "no_resolver"
+            ? 503
             : 502;
       return NextResponse.json(
         {
@@ -177,6 +177,7 @@ export async function POST(request: Request) {
     currency,
     domain,
     attestation: prepared.attestation,
+    texts: prepared.texts,
     tx: {
       to: prepared.to,
       data: prepared.data,
@@ -194,10 +195,12 @@ export async function POST(request: Request) {
     rootDomain: invoice.rootDomain,
     namespace: domain.name,
     subregistry: domain.subregistry,
+    resolver: prepared.resolver,
+    texts: invoice.texts,
     attestation: invoice.attestation,
     stubCalldata: false,
     chainId: invoice.chainId,
     tx: invoice.tx,
-    hint: "Sign the tx from the agent wallet and POST /api/invoices/submit (agent pays gas)",
+    hint: "Sign the tx from the agent wallet and POST /api/invoices/submit (agent pays gas). Billie writes ENS text records after confirmation.",
   });
 }

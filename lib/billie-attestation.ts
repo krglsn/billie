@@ -1,14 +1,13 @@
 /**
  * Billie service attestation for invoices.
  *
- * Later this signature is written as an ENS text record on the invoice
- * subdomain (key `billie.attestation`). For now it lives only on the Billie
- * invoice record / prepare response — not in register calldata.
+ * Written on-chain as ENS text `billie.attestation` after invoice submit confirms
+ * (via Billie's shared PermissionedResolver multicall).
  */
 import { type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-/** Future ENS text record key (Idea.md service signature). */
+/** ENS text record key for the service signature. */
 export const BILLIE_ATTESTATION_ENS_TEXT_KEY = "billie.attestation" as const;
 
 export type InvoiceAttestationPayload = {
@@ -20,7 +19,7 @@ export type InvoiceAttestationPayload = {
   humanId: string;
 };
 
-/** Off-chain attestation; maps to ENS text `billie.attestation` later. */
+/** Off-chain + on-chain attestation; ENS text `billie.attestation`. */
 export type InvoiceAttestation = {
   ensTextKey: typeof BILLIE_ATTESTATION_ENS_TEXT_KEY;
   scheme: "eip712";

@@ -22,6 +22,9 @@ export const ENS_V2_VERIFIABLE_FACTORY_SEPOLIA =
   "0xD2a632D8a8b67c2c4398c255CbD7aF8dd7236198" as const;
 export const ENS_V2_USER_REGISTRY_IMPL_SEPOLIA =
   "0x0F99e7Ea74903AfCB7224d0354fD7428A6f92917" as const;
+/** PermissionedResolver implementation (paired with 0xdedb ETHRegistry deploy). */
+export const ENS_V2_PERMISSIONED_RESOLVER_IMPL_SEPOLIA =
+  "0xdcE5205A553573FFd47629327DDdf36186022FfA" as const;
 
 export const Status = {
   AVAILABLE: 0,
@@ -103,6 +106,21 @@ export function getVerifiableFactoryAddress(): `0x${string}` {
 export function getUserRegistryImplAddress(): `0x${string}` {
   return (process.env.ETHEREUM_SEPOLIA_ENS_V2_USER_REGISTRY_IMPL ??
     ENS_V2_USER_REGISTRY_IMPL_SEPOLIA) as `0x${string}`;
+}
+
+export function getPermissionedResolverImplAddress(): `0x${string}` {
+  return (process.env.ETHEREUM_SEPOLIA_ENS_V2_PERMISSIONED_RESOLVER_IMPL ??
+    ENS_V2_PERMISSIONED_RESOLVER_IMPL_SEPOLIA) as `0x${string}`;
+}
+
+/**
+ * Shared Billie PermissionedResolver proxy for invoice text records.
+ * Deploy once with `pnpm ops:invoice-resolver`, then set BILLIE_INVOICE_RESOLVER.
+ */
+export function getBillieInvoiceResolverAddress(): Address | null {
+  const raw = process.env.BILLIE_INVOICE_RESOLVER?.trim();
+  if (!raw || !/^0x[0-9a-fA-F]{40}$/.test(raw)) return null;
+  return raw as Address;
 }
 
 export function createSepoliaPublicClient() {

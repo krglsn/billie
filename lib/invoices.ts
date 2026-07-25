@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
 import type { InvoiceAttestation } from "@/lib/billie-attestation";
 import type { LinkedDomain } from "@/lib/domains";
+import type { InvoiceTextRecords } from "@/lib/invoice-texts";
+import type { Hex } from "viem";
 
 export type InvoiceStatus =
   | "prepared"
@@ -18,8 +20,8 @@ export type InvoiceRecord = {
   agentAddress: string;
   humanId: string;
   status: InvoiceStatus;
-  /** Off-chain Billie sig; later ENS text `billie.attestation`. */
   attestation: InvoiceAttestation;
+  texts: InvoiceTextRecords;
   chainId: "eip155:11155111";
   tx: {
     to: `0x${string}`;
@@ -30,6 +32,9 @@ export type InvoiceRecord = {
   createdAt: string;
   updatedAt: string;
   txHash?: `0x${string}`;
+  textsTxHash?: Hex;
+  textsWritten?: boolean;
+  textsError?: string;
   error?: string;
 };
 
@@ -77,6 +82,7 @@ export function savePreparedInvoice(input: {
   currency: string;
   domain: LinkedDomain;
   attestation: InvoiceAttestation;
+  texts: InvoiceTextRecords;
   tx: InvoiceRecord["tx"];
   stubCalldata: boolean;
 }): InvoiceRecord {
@@ -97,6 +103,7 @@ export function savePreparedInvoice(input: {
     humanId: input.domain.humanId,
     status: "prepared",
     attestation: input.attestation,
+    texts: input.texts,
     chainId: "eip155:11155111",
     tx: input.tx,
     stubCalldata: input.stubCalldata,
@@ -112,7 +119,16 @@ export function savePreparedInvoice(input: {
 export function updateInvoice(
   id: string,
   patch: Partial<
-    Pick<InvoiceRecord, "status" | "txHash" | "error" | "updatedAt">
+    Pick<
+      InvoiceRecord,
+      | "status"
+      | "txHash"
+      | "error"
+      | "updatedAt"
+      | "textsTxHash"
+      | "textsWritten"
+      | "textsError"
+    >
   >,
 ): InvoiceRecord {
   const existing = byId.get(id);

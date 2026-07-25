@@ -97,17 +97,19 @@ pnpm agent:domain -- alice
 
 Invoice = subdomain under the agent's namespace, e.g. `inv-01.alice.agentinvoice.eth`.
 
-1. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
-2. `POST /api/invoices` with `{ "label": "inv-01", "amount": "100", "currency": "USDC" }` → Billie EIP-712 `attestation` + `register` calldata targeting the **agent UserRegistry**. Requires `BILLIE_PRIVATE_KEY`.
-3. Agent signs the returned tx on Sepolia (agent pays gas).
-4. `POST /api/invoices/submit` with `{ "invoiceId", "signedTx" }` → Billie verifies match, broadcasts, waits ~45s for 1 confirmation (or returns `submitted` + hash on timeout).
+1. Deploy invoice resolver once: `pnpm ops:invoice-resolver` → set `BILLIE_INVOICE_RESOLVER` in `.env`, restart API.
+2. Agent has a linked namespace (`POST /api/domains`) with a UserRegistry.
+3. `POST /api/invoices` → attestation + `texts` preview + `register` calldata (resolver = Billie PermissionedResolver).
+4. Agent signs + `POST /api/invoices/submit` (agent pays gas for register).
+5. After confirmation, Billie writes ENS text records (`billie.amount`, `billie.currency`, `billie.status`, `billie.attestation`, …).
 
 ```bash
+pnpm ops:invoice-resolver
+# add BILLIE_INVOICE_RESOLVER=0x... to .env and restart
+
 pnpm agent:invoice -- alice.agentinvoice.eth inv-01 100 USDC
 BILLIE_SUBMIT_INVOICE=1 pnpm agent:invoice -- alice.agentinvoice.eth inv-02 50 USDC
 ```
-
-Text records (incl. `billie.attestation` on-chain) are still deferred.
 
 ---
 
