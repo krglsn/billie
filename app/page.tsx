@@ -291,8 +291,15 @@ export default function Home() {
       {agent && domain ? (
         <section className="mt-6">
           <div className="mb-3 flex items-end justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">Invoices</h2>
-            <p className="font-mono text-xs text-muted">{domain}</p>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Invoices from {domain}
+            </h2>
+            <p
+              className="font-mono text-xs text-muted"
+              title={agent}
+            >
+              {middleEllipsis(agent, 8, 6)}
+            </p>
           </div>
 
           {loadingInvoices ? (
