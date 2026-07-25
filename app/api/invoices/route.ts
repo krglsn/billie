@@ -6,6 +6,11 @@ import {
 } from "@/lib/agentkit";
 import { checkBillieParentStatus } from "@/lib/billie-parent";
 import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
+import {
+  formatAtomicAmount,
+  readErc20TokenMeta,
+  type Erc20TokenMeta,
+} from "@/lib/erc20";
 import { INVOICE_TEXT_KEYS } from "@/lib/invoice-texts";
 import {
   InvoicePrepareError,
@@ -73,6 +78,8 @@ export async function GET(request: Request) {
     );
   }
 
+  const tokenMetaCache = new Map<string, Erc20TokenMeta | null>();
+
   const invoices = await Promise.all(
     records.map(async (inv) => {
       const ensStatus = inv.texts[INVOICE_TEXT_KEYS.status] ?? "open";
@@ -84,11 +91,30 @@ export async function GET(request: Request) {
           paidOnRouter = null;
         }
       }
+
+      const tokenKey = inv.token.toLowerCase();
+      let tokenMeta = tokenMetaCache.get(tokenKey);
+      if (tokenMeta === undefined) {
+        tokenMeta = await readErc20TokenMeta(inv.token);
+        tokenMetaCache.set(tokenKey, tokenMeta);
+      }
+
+      const amountDisplay = tokenMeta
+        ? formatAtomicAmount(inv.amount, tokenMeta.decimals)
+        : null;
+      const amountLabel =
+        amountDisplay && tokenMeta?.symbol
+          ? `${amountDisplay} ${tokenMeta.symbol}`
+          : (amountDisplay ?? inv.amount);
+
       return {
         fullName: inv.fullName,
         agentAddress: inv.agentAddress,
         humanId: inv.humanId,
         rootDomain: inv.rootDomain,
+        amount: inv.amount,
+        amountDisplay,
+        amountLabel,
         paymentStatus: computePaymentStatus({ paidOnRouter, ensStatus }),
         registrationStatus: inv.status,
       };

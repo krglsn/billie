@@ -87,11 +87,6 @@ function InvoiceDetail() {
               : data.amountDisplay
             : data.amount,
         ],
-        [
-          "Currency",
-          data.currencyDisplay ?? data.currency,
-        ],
-        ["Token", data.token],
         ["Payment address", data.paymentAddress],
         ["Status", data.paymentStatus],
         ["Agent", agent],

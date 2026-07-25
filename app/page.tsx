@@ -14,6 +14,7 @@ type InvoiceRow = {
   fullName: string;
   agentAddress: string;
   humanId: string;
+  amountLabel?: string;
   paymentStatus: string;
 };
 
@@ -151,6 +152,7 @@ export default function Home() {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Amount</th>
                   <th>Agent</th>
                   <th>Human ID</th>
                   <th>Status</th>
@@ -161,6 +163,7 @@ export default function Home() {
                 {invoices.map((inv) => (
                   <tr key={inv.fullName}>
                     <td className="mono">{inv.fullName}</td>
+                    <td>{inv.amountLabel ?? "—"}</td>
                     <td className="mono">{inv.agentAddress}</td>
                     <td className="mono">{inv.humanId}</td>
                     <td>{inv.paymentStatus}</td>
