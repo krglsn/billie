@@ -11,12 +11,17 @@ import { normalize } from "viem/ens";
 import { sepolia } from "viem/chains";
 
 /**
- * ENSv2 ETHRegistry on Sepolia (app.ens.dev / Namechain test deployment).
- * Paired with ETHRegistrar 0x8c2E866B439358c41AE05De9cbE8A00BFEFafFcA.
- * Override with ETHEREUM_SEPOLIA_ENS_V2_REGISTRY if deployments move.
+ * ENSv2 Sepolia deployment used by app.ens.dev (ETHRegistry 0xdedb…).
+ * A newer 20260630 deploy (0x67b7…) exists but names registered via the
+ * current dashboard live on this older pair — override via env if needed.
+ * @see ensjs feature/fet-1885-ensjs-refactor packages/ensjs/src/clients/l1.ts
  */
 export const ENS_V2_ETH_REGISTRY_SEPOLIA =
   "0xdedb92913a25abe1f7bcdd85d8a344a43b398b67" as const;
+export const ENS_V2_VERIFIABLE_FACTORY_SEPOLIA =
+  "0xD2a632D8a8b67c2c4398c255CbD7aF8dd7236198" as const;
+export const ENS_V2_USER_REGISTRY_IMPL_SEPOLIA =
+  "0x0F99e7Ea74903AfCB7224d0354fD7428A6f92917" as const;
 
 const Status = {
   AVAILABLE: 0,
@@ -36,7 +41,7 @@ const ensV2RegistryAbi = [
         components: [
           { name: "status", type: "uint8" },
           { name: "expiry", type: "uint64" },
-          { name: "owner", type: "address" },
+          { name: "latestOwner", type: "address" },
           { name: "tokenId", type: "uint256" },
           { name: "resource", type: "uint256" },
         ],
@@ -90,6 +95,16 @@ export function getEthRegistryAddress(): `0x${string}` {
     ENS_V2_ETH_REGISTRY_SEPOLIA) as `0x${string}`;
 }
 
+export function getVerifiableFactoryAddress(): `0x${string}` {
+  return (process.env.ETHEREUM_SEPOLIA_ENS_V2_FACTORY ??
+    ENS_V2_VERIFIABLE_FACTORY_SEPOLIA) as `0x${string}`;
+}
+
+export function getUserRegistryImplAddress(): `0x${string}` {
+  return (process.env.ETHEREUM_SEPOLIA_ENS_V2_USER_REGISTRY_IMPL ??
+    ENS_V2_USER_REGISTRY_IMPL_SEPOLIA) as `0x${string}`;
+}
+
 export function createSepoliaPublicClient() {
   return getSepoliaClient();
 }
@@ -131,6 +146,7 @@ export function labelHashOf(label: string): `0x${string}` {
 export async function getEnsV2OwnerOnSepolia(name: string): Promise<{
   owner: Address | null;
   tokenId: bigint;
+  resource: bigint;
   expiry: bigint;
   status: number;
   resolver: Address;
@@ -155,10 +171,11 @@ export async function getEnsV2OwnerOnSepolia(name: string): Promise<{
     }),
   ]);
 
-  if (state.status !== Status.REGISTERED || state.owner === zeroAddress) {
+  if (state.status !== Status.REGISTERED || state.latestOwner === zeroAddress) {
     return {
       owner: null,
       tokenId: state.tokenId,
+      resource: state.resource,
       expiry: state.expiry,
       status: state.status,
       resolver,
@@ -166,8 +183,9 @@ export async function getEnsV2OwnerOnSepolia(name: string): Promise<{
   }
 
   return {
-    owner: state.owner,
+    owner: state.latestOwner,
     tokenId: state.tokenId,
+    resource: state.resource,
     expiry: state.expiry,
     status: state.status,
     resolver,
