@@ -7,13 +7,14 @@ Human-backed agent invoice API (Stage 1).
 - Next.js (App Router) + TypeScript
 - pnpm
 - World AgentKit (human-backed agent verification)
+- viem (Ethereum Sepolia **ENSv2** ownership checks)
 
 ## Chains (target)
 
 | Asset | Network | CAIP-2 |
 |-------|---------|--------|
-| Root ENS domain | Ethereum Sepolia | `eip155:11155111` |
-| Invoice subdomain | Base Sepolia | `eip155:84532` |
+| Root ENS domain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
+| Invoice subdomain | Ethereum Sepolia (ENSv2) | `eip155:11155111` |
 | AgentBook lookup | World Chain | `eip155:480` |
 
 ## Setup
@@ -25,7 +26,7 @@ pnpm dev --hostname 127.0.0.1 --port 3000
 
 **Always use `127.0.0.1`, not `localhost`.** The dev server binds IPv4 only; on macOS `localhost` often resolves to `::1` and requests hang.
 
-Optional env vars: [`.env.example`](./.env.example). AgentBook / signature RPCs default to public endpoints if unset.
+Optional env vars: [`.env.example`](./.env.example). AgentBook / signature / Sepolia RPCs default to public endpoints if unset.
 
 ## Endpoints (Stage 1)
 
@@ -33,18 +34,32 @@ Optional env vars: [`.env.example`](./.env.example). AgentBook / signature RPCs 
 |--------|------|------|-------|
 | `GET` | `/api/health` | public | liveness |
 | `GET` | `/api/me` | AgentKit | returns `agentAddress` + `humanId` |
-| `POST` | `/api/domains` | AgentKit | body `{ "name": "billie" }` → stub Sepolia tx params; `409` if taken |
+| `POST` | `/api/domains` | AgentKit | claim/link an already-owned Sepolia ENSv2 name |
 
-`/api/invoices` is **not** in Stage 1 yet (planned for Base Sepolia).
+`/api/invoices` is **not** in Stage 1 yet (same Sepolia ENSv2 root when added).
 
 Protected routes return `402` with an AgentKit challenge when the `agentkit` header is missing. Agents must use `createAgentkitClient(...).fetch` (or the smoke scripts below).
 
-### Domain create (stub)
+### Domain claim / link
 
-1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional).
-2. API verifies human-backed AgentKit identity (AgentBook on World Chain).
-3. If the name is free (**in-memory** for now), returns hardcoded Ethereum Sepolia params (`chainId`, `to`, `data`, `value`) and reserves the name.
-4. Agent would register on-chain itself later — Stage 1 does **not** submit or index txs.
+Register the `.eth` name yourself on **Ethereum Sepolia ENSv2** (`app.ens.dev`) with the **same** wallet you use as the AgentKit agent, then link it:
+
+1. `POST /api/domains` with `{ "name": "billie.eth" }` (`.eth` optional) + AgentKit.
+2. API verifies human-backed identity (AgentBook on World Chain).
+3. If the name is already linked, or this agent already has a domain → `409`.
+4. API reads ENSv2 `ETHRegistry.getState(labelhash)` on Sepolia and requires `owner == agentAddress`.
+5. On success, stores `humanId → agentAddress → domain` (plus indexes by name / agent) and returns the mapping.
+
+| Status | Meaning |
+|--------|---------|
+| `402` / `401` / `403` (AgentKit) | not human-backed / bad signature |
+| `409` | domain already linked, or agent already has a linked domain |
+| `404` | name not registered on Sepolia ENSv2 |
+| `403` | ENSv2 owner ≠ agent address |
+| `502` | Sepolia RPC / lookup failure |
+| `200` | linked; response includes `mapping` |
+
+Note: names registered only in classic ENSv1 will not resolve here. Owner must be the agent wallet.
 
 ---
 
@@ -81,37 +96,33 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 ### 4. Create + register an agent wallet (once)
 
 ```bash
-# Prints a throwaway address + private key (save both)
 pnpm agent:me
+# save address + privateKey
 
 npx @worldcoin/agentkit-cli register 0xYourAddress
-# scan QR in World App
-
 npx @worldcoin/agentkit-cli status 0xYourAddress
-# → Status: registered
 ```
 
 ### 5. Authorized identity probe
 
+Put the key in `.env` (see `.env.example`), then:
+
 ```bash
-AGENT_PRIVATE_KEY=0x... pnpm agent:me
+pnpm agent:me
+# → 200 + humanId
 ```
 
-Expect:
+### 6. Domain claim
 
-- logs `agentkit_detected` / `agentkit_signed`
-- `Status: 200`
-- JSON with `agentAddress` and `humanId`
-- final line `OK — agent authorized as human-backed.`
-
-### 6. Domain stub (success then taken)
+1. On Ethereum Sepolia ENSv2 (`app.ens.dev`), register `myagent.eth` to the **agent** address.
+2. Link it:
 
 ```bash
-AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- myagent
-# → 200, name "myagent.eth", chainId "eip155:11155111", stub to/data/value
+pnpm agent:domain -- myagent
+# → 200 + mapping { humanId, agentAddress, domain }
 
-AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- myagent
-# → 409 Domain is already taken
+pnpm agent:domain -- myagent
+# → 409 domain already linked (or agent already has a domain)
 ```
 
 ### Pass criteria
@@ -119,7 +130,9 @@ AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- myagent
 - [ ] `/api/health` → 200
 - [ ] `/api/me` and `/api/domains` without AgentKit → 402
 - [ ] Registered agent → `/api/me` 200 + `humanId`
-- [ ] Registered agent → `/api/domains` 200 with Sepolia stub params
+- [ ] Agent-owned Sepolia ENSv2 name → `/api/domains` 200 + mapping
 - [ ] Same name twice → 409
+- [ ] Second domain for same agent → 409
+- [ ] Wrong owner / missing ENS → 403 / 404
 
 See [PLAN.md](./PLAN.md) for scope and follow-ups.

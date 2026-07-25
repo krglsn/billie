@@ -11,7 +11,7 @@ export default function Home() {
           <code>GET /api/me</code> — AgentKit-protected identity probe
         </li>
         <li>
-          <code>POST /api/domains</code> — stub domain registration params
+          <code>POST /api/domains</code> — claim/link Sepolia ENS ownership
         </li>
       </ul>
     </main>

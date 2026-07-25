@@ -3,17 +3,17 @@ import { NextResponse } from "next/server";
 import {
   AGENTKIT,
   buildAgentkitSchema,
-  createAgentBookVerifier,
   parseAgentkitHeader,
   validateAgentkitMessage,
   verifyAgentkitSignature,
 } from "@worldcoin/agentkit";
+import { lookupHumanId } from "@/lib/agentbook";
 
 const WORLD_CHAIN = "eip155:480";
 const BASE = "eip155:8453";
-const BASE_SEPOLIA = "eip155:84532";
+const ETHEREUM_SEPOLIA = "eip155:11155111";
 
-const SUPPORTED_NETWORKS = [BASE, BASE_SEPOLIA, WORLD_CHAIN] as const;
+const SUPPORTED_NETWORKS = [BASE, ETHEREUM_SEPOLIA, WORLD_CHAIN] as const;
 
 export type HumanBackedAgent = {
   address: string;
@@ -119,13 +119,18 @@ export async function requireHumanBackedAgent(
       );
     }
 
-    const agentBook = createAgentBookVerifier(
-      process.env.WORLD_CHAIN_RPC_URL
-        ? { rpcUrl: process.env.WORLD_CHAIN_RPC_URL }
-        : undefined,
-    );
-    const humanId = await agentBook.lookupHuman(verification.address);
-    if (!humanId) {
+    const lookup = await lookupHumanId(verification.address);
+    if (!lookup.ok) {
+      if (lookup.reason === "lookup_failed") {
+        return NextResponse.json(
+          {
+            error: "Failed to look up agent in AgentBook",
+            address: verification.address,
+            detail: lookup.detail,
+          },
+          { status: 502 },
+        );
+      }
       return NextResponse.json(
         {
           error: "Agent is not registered in AgentBook",
@@ -137,7 +142,7 @@ export async function requireHumanBackedAgent(
 
     return {
       address: verification.address,
-      humanId,
+      humanId: lookup.humanId,
     };
   } catch (error) {
     return NextResponse.json(

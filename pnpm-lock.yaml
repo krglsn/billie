@@ -20,6 +20,9 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
+      viem:
+        specifier: ^2.55.8
+        version: 2.55.8(typescript@5.9.3)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^20
@@ -42,9 +45,6 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
-      viem:
-        specifier: ^2.55.8
-        version: 2.55.8(typescript@5.9.3)(zod@4.4.3)
 
 packages:
 

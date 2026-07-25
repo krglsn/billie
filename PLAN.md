@@ -10,16 +10,14 @@ Deferred pieces stay in the picture; only the API slice ships now.
 
 - **API** — agent auth (AgentKit + AgentBook), domain + invoice creation.
 - **Web app** (deferred) — dashboard + public invoice validation form.
-- **Contracts** (deferred):
-  - **Root ENS domains** on **Ethereum Sepolia** (availability checked there later).
-  - **Invoice subdomains** on **Base Sepolia**.
-  - Agents own the root domain and pay gas.
+- **Contracts** (deferred): root ENS domains **and** invoice subdomains on **Ethereum Sepolia (ENSv2)**. Agents own the root domain and pay gas.
 
 ## Decisions for Stage 1
 
 - **Stack:** Next.js (App Router) TypeScript — API routes only for now (no UI pages beyond a minimal health check if useful).
 - **Auth:** World AgentKit (`@worldcoin/agentkit`) — CAIP-122 challenge + AgentBook lookup on World Chain. Prefer `free` (or high `free-trial`) mode so local testing does not require x402 payment.
-- **On-chain:** root domains → **Ethereum Sepolia**; invoice subdomains → **Base Sepolia**. No contract design or deployment in this stage — endpoints return stub / in-memory records. Domain availability is in-memory for now; later it will read Ethereum Sepolia ENS.
+- **On-chain:** everything Billie (root domains + invoice subdomains) on **Ethereum Sepolia ENSv2**. Agent registers offline; Billie **claims/links** after ownership check. Domain link store is in-memory for Stage 1.
+- **Store model:** `humanId → agentAddress → domain` (one linked root domain per agent; domain names globally unique). Lookups by agent and by human are supported for `/api/invoices`.
 - **Client for smoke test:** `pnpm agent:me` / `pnpm agent:domain` using `createAgentkitClient` + `agentkit.fetch` against `http://127.0.0.1:3000`.
 
 ## Stage 1 scope
@@ -34,8 +32,8 @@ Deferred pieces stay in the picture; only the API slice ships now.
 
 | Endpoint | Purpose | Stage 1 behavior |
 |----------|---------|------------------|
-| `POST /api/domains` | Root domain (e.g. `billie.eth`) on Ethereum Sepolia | Validate AgentKit; in-memory availability; return stub Sepolia registration params; agent submits tx itself |
-| `POST /api/invoices` | Invoice subdomain on Base Sepolia | Validate AgentKit; require agent domain; return stub Base Sepolia params / record |
+| `POST /api/domains` | Claim root ENS on Ethereum Sepolia ENSv2 | AgentKit; reject if name or agent already linked; verify on-chain owner == agent; store `humanId → agentAddress → domain` |
+| `POST /api/invoices` | Invoice subdomain under linked root (same Sepolia ENSv2) | Validate AgentKit; require linked domain via agent lookup; stub / later on-chain |
 
 Both return clear JSON success/error. Unauthenticated or non–human-backed requests get the AgentKit/x402 challenge (402) and fail verify without a registered AgentBook wallet.
 
@@ -46,27 +44,26 @@ Full checklist: [README.md](./README.md#stage-1-verification-checklist).
 1. Start API: `pnpm dev --hostname 127.0.0.1 --port 3000`
 2. Register agent: `npx @worldcoin/agentkit-cli register <address>`
 3. `pnpm agent:me` and `pnpm agent:domain -- <name>`
-4. Confirm: unauthenticated → 402; registered agent → `/api/me` + `/api/domains` succeed; duplicate domain → 409
+4. Confirm: unauthenticated → 402; registered agent → `/api/me` + `/api/domains` succeed; duplicate domain / second domain for same agent → 409
 
 `/api/invoices` is deferred past this checkpoint.
 
 ## Todos
 
 1. ~~Scaffold local API (Next.js API routes) with AgentKit human-backed verification~~
-2. ~~Add `POST /api/domains` stub behind AgentKit auth~~ (`/api/invoices` still pending)
+2. ~~Add `POST /api/domains` claim/link behind AgentKit auth~~ (`/api/invoices` still pending)
 3. ~~Document + verify local flow — register agent via AgentKit CLI, call `/api/me` and `/api/domains`~~
-4. Add `POST /api/invoices` stub behind AgentKit auth (Base Sepolia)
+4. Add `POST /api/invoices` stub behind AgentKit auth (Ethereum Sepolia ENSv2)
 
 ## Out of scope (this stage)
 
 - Web dashboard / validation UI
-- Real ENS root registration on Ethereum Sepolia / invoice subdomains on Base Sepolia
-- On-chain availability checks (stub uses in-memory reservation)
+- Real on-chain invoice subdomain minting / text records
 - Payment / Paid status lifecycle
 - Persistent production DB (in-memory or local file is enough)
 
 ## Follow-ups (later stages)
 
-1. Root ENS on Ethereum Sepolia + invoice subdomains on Base Sepolia; replace stubs with real calldata / availability reads.
+1. Invoice subdomains on the same Ethereum Sepolia ENSv2 root (roles / subregistry / resolver); replace stubs with real calldata.
 2. Web app: dashboard + public validate form.
 3. Service signature on invoices + stronger persistence/indexer.
