@@ -18,12 +18,30 @@ type InvoiceRow = {
   paymentStatus: string;
 };
 
+function RefreshIcon({ spinning }: { spinning?: boolean }) {
+  return (
+    <svg
+      className={spinning ? "icon-refresh-svg is-spinning" : "icon-refresh-svg"}
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden
+    >
+      <path
+        fill="currentColor"
+        d="M13.65 2.35A8 8 0 1 0 16 8h-2a6 6 0 1 1-1.76-4.24L10 6h6V0l-2.35 2.35z"
+      />
+    </svg>
+  );
+}
+
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agent, setAgent] = useState("");
   const [domain, setDomain] = useState("");
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
+  const [loadingDomains, setLoadingDomains] = useState(false);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,7 +83,6 @@ export default function Home() {
   );
 
   const loadAgents = useCallback(async () => {
-    setLoadingAgents(true);
     setError(null);
     try {
       const res = await fetch("/api/agents");
@@ -94,23 +111,41 @@ export default function Home() {
         agent: agentRef.current,
         domain: domainRef.current,
       };
-    } finally {
-      setLoadingAgents(false);
     }
   }, []);
 
-  const refreshAll = useCallback(async () => {
-    const selection = await loadAgents();
-    if (selection.agent && selection.domain) {
-      await loadInvoices(selection.agent, selection.domain);
-    } else {
-      setInvoices([]);
+  const refreshAgents = useCallback(async () => {
+    setLoadingAgents(true);
+    try {
+      const selection = await loadAgents();
+      if (selection.agent && selection.domain) {
+        await loadInvoices(selection.agent, selection.domain);
+      } else if (!selection.agent) {
+        setInvoices([]);
+      }
+    } finally {
+      setLoadingAgents(false);
+    }
+  }, [loadAgents, loadInvoices]);
+
+  const refreshDomains = useCallback(async () => {
+    if (!agentRef.current) return;
+    setLoadingDomains(true);
+    try {
+      const selection = await loadAgents();
+      if (selection.agent && selection.domain) {
+        await loadInvoices(selection.agent, selection.domain);
+      } else if (selection.agent && !selection.domain) {
+        setInvoices([]);
+      }
+    } finally {
+      setLoadingDomains(false);
     }
   }, [loadAgents, loadInvoices]);
 
   useEffect(() => {
-    void loadAgents();
-  }, [loadAgents]);
+    void refreshAgents();
+  }, [refreshAgents]);
 
   useEffect(() => {
     void loadInvoices(agent, domain);
@@ -119,7 +154,7 @@ export default function Home() {
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState === "visible") {
-        void refreshAll();
+        void refreshAgents();
       }
     };
     document.addEventListener("visibilitychange", onVisible);
@@ -128,67 +163,91 @@ export default function Home() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [refreshAll]);
+  }, [refreshAgents]);
 
   return (
     <main className="page">
-      <div className="page-header">
-        <div>
-          <h1>Billie</h1>
-          <p className="lede">Pay invoices issued by human-backed agents.</p>
-        </div>
-        <button
-          type="button"
-          className="button-secondary"
-          onClick={() => void refreshAll()}
-          disabled={loadingAgents || loadingInvoices}
-        >
-          {loadingAgents ? <Spinner label="Refreshing…" /> : "Refresh"}
-        </button>
-      </div>
+      <h1>Billie</h1>
+      <p className="lede">Pay invoices issued by human-backed agents.</p>
 
-      <label className="field">
+      <div className="field">
         <span>Agent</span>
         {loadingAgents && agents.length === 0 ? (
           <Spinner label="Loading agents…" />
         ) : agents.length === 0 ? (
-          <p className="muted">No agents found in database.</p>
+          <div className="field-row">
+            <p className="muted field-row-grow">No agents found in database.</p>
+            <button
+              type="button"
+              className="icon-refresh"
+              aria-label="Refresh agents"
+              title="Refresh agents"
+              onClick={() => void refreshAgents()}
+              disabled={loadingAgents}
+            >
+              <RefreshIcon spinning={loadingAgents} />
+            </button>
+          </div>
         ) : (
-          <select
-            value={agent}
-            onChange={(e) => {
-              setAgent(e.target.value);
-              setDomain("");
-            }}
-          >
-            <option value="">Select agent…</option>
-            {agents.map((a) => (
-              <option key={a.agentAddress} value={a.agentAddress}>
-                {a.agentAddress.slice(0, 10)}… — {a.humanId.slice(0, 10)}…
-              </option>
-            ))}
-          </select>
+          <div className="field-row">
+            <select
+              value={agent}
+              onChange={(e) => {
+                setAgent(e.target.value);
+                setDomain("");
+              }}
+            >
+              <option value="">Select agent…</option>
+              {agents.map((a) => (
+                <option key={a.agentAddress} value={a.agentAddress}>
+                  {a.agentAddress.slice(0, 10)}… — {a.humanId.slice(0, 10)}…
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="icon-refresh"
+              aria-label="Refresh agents"
+              title="Refresh agents"
+              onClick={() => void refreshAgents()}
+              disabled={loadingAgents}
+            >
+              <RefreshIcon spinning={loadingAgents} />
+            </button>
+          </div>
         )}
-      </label>
+      </div>
 
       {agent ? (
-        <label className="field">
+        <div className="field">
           <span>Domain</span>
-          <select
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            disabled={domains.length === 0}
-          >
-            <option value="">
-              {domains.length === 0 ? "No domains" : "Select domain…"}
-            </option>
-            {domains.map((d) => (
-              <option key={d} value={d}>
-                {d}
+          <div className="field-row">
+            <select
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              disabled={domains.length === 0 || loadingDomains}
+            >
+              <option value="">
+                {domains.length === 0 ? "No domains" : "Select domain…"}
               </option>
-            ))}
-          </select>
-        </label>
+              {domains.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="icon-refresh"
+              aria-label="Refresh domains"
+              title="Refresh domains"
+              onClick={() => void refreshDomains()}
+              disabled={loadingDomains}
+            >
+              <RefreshIcon spinning={loadingDomains} />
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {error ? <p className="error">{error}</p> : null}

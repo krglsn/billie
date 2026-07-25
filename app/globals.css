@@ -27,33 +27,6 @@ code,
   margin-top: 0;
 }
 
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.5rem;
-}
-
-.page-header h1 {
-  margin-bottom: 0.35rem;
-}
-
-.button-secondary {
-  font: inherit;
-  padding: 0.4rem 0.75rem;
-  cursor: pointer;
-  border: 1px solid #bbb;
-  background: #fff;
-  color: #111;
-  flex-shrink: 0;
-}
-
-.button-secondary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -62,9 +35,54 @@ code,
   max-width: 28rem;
 }
 
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.field-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-row-grow {
+  flex: 1;
+  margin: 0;
+}
+
 .field select {
   font: inherit;
   padding: 0.4rem 0.5rem;
+}
+
+.icon-refresh {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ccc;
+  border-radius: 50%;
+  background: #fff;
+  color: #333;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.icon-refresh:hover:not(:disabled) {
+  border-color: #888;
+  color: #111;
+}
+
+.icon-refresh:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.icon-refresh-svg.is-spinning {
+  animation: spin 0.7s linear infinite;
 }
 
 table.data {
