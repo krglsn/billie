@@ -45,6 +45,12 @@ function statusClass(status: string): string {
   return "bg-slate-50 text-slate-700 ring-slate-200";
 }
 
+/** Shorten long ids/addresses: 0x1234…abcd */
+function middleEllipsis(value: string, head = 6, tail = 4): string {
+  if (value.length <= head + tail + 1) return value;
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agent, setAgent] = useState("");
@@ -300,12 +306,11 @@ export default function Home() {
           ) : (
             <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[40rem] text-left text-sm">
+                <table className="w-full text-left text-sm">
                   <thead className="border-b border-line bg-slate-50/80 text-xs font-medium uppercase tracking-wide text-muted">
                     <tr>
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Amount</th>
-                      <th className="px-4 py-3">Agent</th>
                       <th className="px-4 py-3">Human ID</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3" />
@@ -317,17 +322,20 @@ export default function Home() {
                         key={inv.fullName}
                         className="transition hover:bg-slate-50/60"
                       >
-                        <td className="px-4 py-3 font-mono text-xs sm:text-sm">
+                        <td
+                          className="max-w-[14rem] truncate px-4 py-3 font-mono text-xs sm:max-w-[18rem] sm:text-sm"
+                          title={inv.fullName}
+                        >
                           {inv.fullName}
                         </td>
-                        <td className="px-4 py-3 font-medium">
+                        <td className="whitespace-nowrap px-4 py-3 font-medium">
                           {inv.amountLabel ?? "—"}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-muted">
-                          {inv.agentAddress}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-muted">
-                          {inv.humanId}
+                        <td
+                          className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted"
+                          title={inv.humanId}
+                        >
+                          {middleEllipsis(inv.humanId, 8, 6)}
                         </td>
                         <td className="px-4 py-3">
                           <span
