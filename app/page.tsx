@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -364,10 +363,20 @@ function Dashboard() {
                         agent,
                         domain,
                       });
+                      const href = `/invoice?${payQs}`;
                       return (
                         <tr
                           key={inv.fullName}
-                          className="transition hover:bg-slate-50/60"
+                          role="link"
+                          tabIndex={0}
+                          className="cursor-pointer transition hover:bg-slate-50/60 focus-visible:bg-slate-50/80 focus-visible:outline-none"
+                          onClick={() => router.push(href)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              router.push(href);
+                            }
+                          }}
                         >
                           <td
                             className="max-w-[14rem] truncate px-4 py-3 font-mono text-xs sm:max-w-[18rem] sm:text-sm"
@@ -392,12 +401,9 @@ function Dashboard() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <Link
-                              href={`/invoice?${payQs}`}
-                              className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover"
-                            >
+                            <span className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white">
                               Pay
-                            </Link>
+                            </span>
                           </td>
                         </tr>
                       );
