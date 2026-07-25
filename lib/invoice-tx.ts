@@ -1,17 +1,11 @@
-import { encodeFunctionData, type Address, type Hex } from "viem";
+import { encodeFunctionData, type Address, type Hex, zeroAddress } from "viem";
 import {
   signInvoiceAttestation,
   type InvoiceAttestation,
 } from "@/lib/billie-attestation";
-import {
-  ethLabelFromName,
-  getEthRegistryAddress,
-  getEthSubregistry,
-} from "@/lib/ens";
 import type { LinkedDomain } from "@/lib/domains";
-
-/** ROLE_SET_RESOLVER | ROLE_RENEW — enough for a bare subname without text writes. */
-const DEFAULT_ROLE_BITMAP = BigInt(1 << 24) | BigInt(1 << 4);
+import { Status, getRegistryLabelState } from "@/lib/ens";
+import { AGENT_NAMESPACE_NAME_ROLES } from "@/lib/ens-roles";
 
 const registerAbi = [
   {
@@ -35,11 +29,27 @@ export type PreparedInvoiceTx = {
   data: Hex;
   value: "0";
   chainId: "eip155:11155111";
-  stubCalldata: boolean;
+  fullName: string;
+  /** Always false for namespace invoices (agent UserRegistry is required). */
+  stubCalldata: false;
   /** Off-chain for now; later ENS text `billie.attestation`. */
   attestation: InvoiceAttestation;
 };
 
+export class InvoicePrepareError extends Error {
+  constructor(
+    message: string,
+    readonly code: "no_subregistry" | "label_taken" | "lookup_failed",
+  ) {
+    super(message);
+    this.name = "InvoicePrepareError";
+  }
+}
+
+/**
+ * Build `register` calldata against the agent's UserRegistry.
+ * Invoice name: `{label}.{agentNamespace}` e.g. `inv-01.alice.agentinvoice.eth`.
+ */
 export async function buildInvoiceRegisterTx(input: {
   invoiceId: string;
   label: string;
@@ -47,23 +57,51 @@ export async function buildInvoiceRegisterTx(input: {
   currency: string;
   domain: LinkedDomain;
 }): Promise<PreparedInvoiceTx> {
-  const rootLabel = ethLabelFromName(input.domain.name);
-  const fullName = `${input.label}.${input.domain.name}`;
-  const subregistry = await getEthSubregistry(rootLabel);
-  const stubCalldata = !subregistry;
-  const to = (subregistry ?? getEthRegistryAddress()) as Address;
+  const subregistry = input.domain.subregistry as Address | undefined;
+  if (!subregistry) {
+    throw new InvoicePrepareError(
+      "Linked namespace has no UserRegistry — reclaim via POST /api/domains",
+      "no_subregistry",
+    );
+  }
 
-  const expiry = BigInt(Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60);
+  const fullName = `${input.label}.${input.domain.name}`;
+
+  let existing;
+  try {
+    existing = await getRegistryLabelState(subregistry, input.label);
+  } catch (error) {
+    throw new InvoicePrepareError(
+      error instanceof Error
+        ? error.message
+        : "Failed to read agent UserRegistry",
+      "lookup_failed",
+    );
+  }
+
+  if (existing.status === Status.REGISTERED || existing.owner) {
+    throw new InvoicePrepareError(
+      `Invoice label already registered on-chain as ${fullName}`,
+      "label_taken",
+    );
+  }
+
+  const oneYear =
+    BigInt(Math.floor(Date.now() / 1000)) + BigInt(365 * 24 * 60 * 60);
+  // Prefer not to outlive a short on-chain namespace expiry when known later;
+  // for now use one year (parent expiry already capped at namespace provision).
+  const expiry = oneYear;
+
   const data = encodeFunctionData({
     abi: registerAbi,
     functionName: "register",
     args: [
       input.label,
       input.domain.agentAddress as Address,
-      "0x0000000000000000000000000000000000000000",
+      zeroAddress,
       // Text records (incl. billie.attestation) come later — resolver unset.
-      "0x0000000000000000000000000000000000000000",
-      DEFAULT_ROLE_BITMAP,
+      zeroAddress,
+      AGENT_NAMESPACE_NAME_ROLES,
       expiry,
     ],
   });
@@ -78,11 +116,12 @@ export async function buildInvoiceRegisterTx(input: {
   });
 
   return {
-    to,
+    to: subregistry,
     data,
     value: "0",
     chainId: "eip155:11155111",
-    stubCalldata,
+    fullName,
+    stubCalldata: false,
     attestation,
   };
 }

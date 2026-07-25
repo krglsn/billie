@@ -4,7 +4,10 @@ import {
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
 import { getLinkedDomainByAgent, normalizeDomainName } from "@/lib/domains";
-import { buildInvoiceRegisterTx } from "@/lib/invoice-tx";
+import {
+  InvoicePrepareError,
+  buildInvoiceRegisterTx,
+} from "@/lib/invoice-tx";
 import {
   createInvoiceId,
   getInvoiceByFullName,
@@ -20,12 +23,12 @@ type PrepareInvoiceBody = {
 };
 
 /**
- * Prepare an invoice subdomain registration tx (ENSv2, no text records yet).
+ * Prepare an invoice subdomain registration under the agent's namespace.
  *
- * Body: { "label": "inv-01", "amount": "100", "currency": "USDC", "domain"?: "billie.eth" }
+ * Body: { "label": "inv-01", "amount": "100", "currency": "USDC", "domain"?: "alice.parent.eth" }
  *
- * Checks: AgentKit human-backed, agent has claimed the root domain, label free on Billie.
- * Returns Billie EIP-712 attestation (off-chain; later ENS text `billie.attestation`) + register calldata.
+ * `register` targets the agent UserRegistry → `inv-01.alice.parent.eth`.
+ * Agent signs and submits via POST /api/invoices/submit (agent pays gas).
  */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
@@ -63,13 +66,10 @@ export async function POST(request: Request) {
     }
   }
 
-  if (
-    !linked ||
-    (requestedDomain && linked.name !== requestedDomain)
-  ) {
+  if (!linked || (requestedDomain && linked.name !== requestedDomain)) {
     return NextResponse.json(
       {
-        error: "Agent has not claimed the specified domain",
+        error: "Agent has not claimed the specified namespace",
         agentAddress: agent.address,
         domain: requestedDomain,
       },
@@ -78,6 +78,16 @@ export async function POST(request: Request) {
   }
 
   const domain = linked;
+
+  if (!domain.subregistry) {
+    return NextResponse.json(
+      {
+        error: "Linked namespace has no UserRegistry",
+        domain: domain.name,
+      },
+      { status: 409 },
+    );
+  }
 
   if (typeof body.label !== "string") {
     return NextResponse.json(
@@ -133,9 +143,27 @@ export async function POST(request: Request) {
       domain,
     });
   } catch (error) {
+    if (error instanceof InvoicePrepareError) {
+      const status =
+        error.code === "label_taken"
+          ? 409
+          : error.code === "no_subregistry"
+            ? 409
+            : 502;
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code,
+          fullName,
+          namespace: domain.name,
+          subregistry: domain.subregistry,
+        },
+        { status },
+      );
+    }
     return NextResponse.json(
       {
-        error: "Failed to prepare invoice attestation",
+        error: "Failed to prepare invoice",
         detail: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 },
@@ -154,7 +182,7 @@ export async function POST(request: Request) {
       data: prepared.data,
       value: prepared.value,
     },
-    stubCalldata: prepared.stubCalldata,
+    stubCalldata: false,
   });
 
   return NextResponse.json({
@@ -164,12 +192,12 @@ export async function POST(request: Request) {
     amount: invoice.amount,
     currency: invoice.currency,
     rootDomain: invoice.rootDomain,
+    namespace: domain.name,
+    subregistry: domain.subregistry,
     attestation: invoice.attestation,
-    stubCalldata: invoice.stubCalldata,
+    stubCalldata: false,
     chainId: invoice.chainId,
     tx: invoice.tx,
-    hint: invoice.stubCalldata
-      ? "Root name has no ENSv2 subregistry yet — calldata targets ETHRegistry as a stub and may revert on-chain"
-      : "Sign and submit via POST /api/invoices/submit",
+    hint: "Sign the tx from the agent wallet and POST /api/invoices/submit (agent pays gas)",
   });
 }
