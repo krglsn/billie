@@ -9,6 +9,12 @@ import {
   type PayCalldata,
 } from "@/app/components/WalletPayButton";
 
+type VerifyBadge = {
+  ok: boolean;
+  label: string;
+  reason?: string | null;
+};
+
 type ResolveResponse = {
   ok?: boolean;
   error?: string;
@@ -31,6 +37,11 @@ type ResolveResponse = {
   texts?: Record<string, string | undefined>;
   pay?: PayCalldata | null;
   routerCheck?: { reason?: string } | null;
+  verification?: {
+    human: VerifyBadge;
+    agent: VerifyBadge;
+    attestation: VerifyBadge;
+  };
 };
 
 function statusClass(status: string): string {
@@ -41,6 +52,21 @@ function statusClass(status: string): string {
     return "bg-rose-50 text-danger ring-rose-200";
   }
   return "bg-slate-50 text-slate-700 ring-slate-200";
+}
+
+function Badge({ ok, label, reason }: VerifyBadge) {
+  return (
+    <span
+      title={reason ?? undefined}
+      className={`ml-2 inline-flex align-middle rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${
+        ok
+          ? "bg-emerald-50 text-ok ring-emerald-200"
+          : "bg-rose-50 text-danger ring-rose-200"
+      }`}
+    >
+      {label}
+    </span>
+  );
 }
 
 function InvoiceDetail() {
@@ -140,15 +166,7 @@ function InvoiceDetail() {
       : data.amount
     : null;
 
-  const rows: [string, string | null | undefined][] = data
-    ? [
-        ["Invoice ID", data.invoiceId],
-        ["Amount", amountLabel],
-        ["Payment address", data.paymentAddress],
-        ["Agent", agent],
-        ["Human ID", humanId],
-      ]
-    : [];
+  const v = data?.verification;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
@@ -217,16 +235,60 @@ function InvoiceDetail() {
                     </span>
                   </td>
                 </tr>
-                {rows.map(([label, value]) => (
-                  <tr key={label}>
-                    <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
-                      {label}
-                    </th>
-                    <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
-                      {value ?? "—"}
-                    </td>
-                  </tr>
-                ))}
+                <tr>
+                  <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    Invoice ID
+                  </th>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
+                    {data.invoiceId ?? "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    Amount
+                  </th>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
+                    {amountLabel ?? "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    Payment address
+                  </th>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
+                    {data.paymentAddress ?? "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    Agent
+                  </th>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
+                    {agent ?? "—"}
+                    {v?.agent ? <Badge {...v.agent} /> : null}
+                  </td>
+                </tr>
+                <tr>
+                  <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    Human ID
+                  </th>
+                  <td className="px-4 py-3 font-mono text-xs whitespace-nowrap sm:text-sm">
+                    {humanId ?? "—"}
+                    {v?.human ? <Badge {...v.human} /> : null}
+                  </td>
+                </tr>
+                <tr>
+                  <th className="w-40 bg-slate-50/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted">
+                    Attestation
+                  </th>
+                  <td className="px-4 py-3 text-sm">
+                    {v?.attestation ? (
+                      <Badge {...v.attestation} />
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -252,7 +314,7 @@ export default function InvoicePage() {
   return (
     <Suspense
       fallback={
-        <main className="mx-auto max-w-3xl px-4 py-10">
+        <main className="mx-auto max-w-5xl px-4 py-10">
           <Spinner label="Loading…" />
         </main>
       }

@@ -2,11 +2,18 @@ import { NextResponse } from "next/server";
 import { zeroAddress } from "viem";
 import { normalize } from "viem/ens";
 import {
+  verifyInvoiceAgentHuman,
+  verifyInvoiceAttestation,
+} from "@/lib/billie-attestation";
+import {
   formatAtomicAmount,
   formatCurrencyDisplay,
   readErc20TokenMeta,
 } from "@/lib/erc20";
-import { readInvoiceTextRecords } from "@/lib/invoice-texts";
+import {
+  INVOICE_TEXT_KEYS,
+  readInvoiceTextRecords,
+} from "@/lib/invoice-texts";
 import { getInvoiceByFullName } from "@/lib/invoices";
 import {
   buildApproveCalldata,
@@ -108,6 +115,45 @@ export async function GET(request: Request) {
     ? formatCurrencyDisplay(tokenMeta)
     : (settlement.currency ?? memory?.currency ?? null);
 
+  const invoiceId = settlement.invoiceId ?? memory?.id ?? null;
+  const currency = settlement.currency ?? memory?.currency ?? null;
+  const agentAddress =
+    texts[INVOICE_TEXT_KEYS.agent] ?? memory?.agentAddress ?? null;
+  const humanId = texts[INVOICE_TEXT_KEYS.humanId] ?? memory?.humanId ?? null;
+
+  const [identity, attestation] = await Promise.all([
+    agentAddress && humanId
+      ? verifyInvoiceAgentHuman(agentAddress, humanId)
+      : Promise.resolve({
+          agent: {
+            ok: false,
+            reason: !agentAddress ? "missing_agent" : "missing_human_id",
+          },
+          human: {
+            ok: false,
+            reason: !humanId ? "missing_human_id" : "missing_agent",
+          },
+        }),
+    invoiceId && amountAtomic && currency && agentAddress && humanId
+      ? verifyInvoiceAttestation({
+          signature: texts[INVOICE_TEXT_KEYS.attestation] ?? "",
+          claimedSigner: texts[INVOICE_TEXT_KEYS.attestationSigner],
+          scheme: texts[INVOICE_TEXT_KEYS.attestationScheme],
+          payload: {
+            invoiceId,
+            fullName,
+            amount: amountAtomic,
+            currency,
+            agentAddress,
+            humanId,
+          },
+        })
+      : Promise.resolve({
+          ok: false as const,
+          reason: "missing_attestation_fields",
+        }),
+  ]);
+
   const pay =
     router && routerCheck?.payable === true && token && amountAtomic
       ? {
@@ -140,12 +186,12 @@ export async function GET(request: Request) {
     ensStatus: settlement.status ?? null,
     amount: amountAtomic ?? null,
     amountDisplay,
-    currency: settlement.currency ?? memory?.currency ?? null,
+    currency,
     currencyDisplay,
     token: token ?? null,
     tokenMeta,
     paymentAddress: paymentAddress ?? null,
-    invoiceId: settlement.invoiceId ?? memory?.id ?? null,
+    invoiceId,
     texts,
     router,
     routerCheck: routerCheck
@@ -159,6 +205,33 @@ export async function GET(request: Request) {
         }
       : null,
     pay,
+    verification: {
+      human: {
+        ok: identity.human.ok,
+        label: identity.human.ok
+          ? "verified unique human"
+          : "unverified human",
+        reason: identity.human.reason ?? null,
+      },
+      agent: {
+        ok: identity.agent.ok,
+        label: identity.agent.ok
+          ? "verified backed-human agent"
+          : "unverified agent",
+        reason: identity.agent.reason ?? null,
+      },
+      attestation: {
+        ok: attestation.ok,
+        label: attestation.ok
+          ? "verified attestation"
+          : "unverified issuer",
+        reason: attestation.ok ? null : attestation.reason,
+        expectedSigner:
+          "expectedSigner" in attestation
+            ? (attestation.expectedSigner ?? null)
+            : null,
+      },
+    },
     registration: memory
       ? {
           status: memory.status,
