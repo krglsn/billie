@@ -2,16 +2,31 @@ import { NextResponse } from "next/server";
 import { listLinkedDomains } from "@/lib/domains";
 
 /**
- * Public: list linked agents from the in-memory domain store.
+ * Public: list linked agents + domains from the in-memory store.
  *
  * GET /api/agents
  */
 export async function GET() {
-  const agents = listLinkedDomains().map((d) => ({
-    agentAddress: d.agentAddress,
-    humanId: d.humanId,
-    domain: d.name,
-  }));
+  const byAgent = new Map<
+    string,
+    { agentAddress: string; humanId: string; domains: string[] }
+  >();
 
-  return NextResponse.json({ ok: true, agents });
+  for (const d of listLinkedDomains()) {
+    const existing = byAgent.get(d.agentAddress);
+    if (existing) {
+      existing.domains.push(d.name);
+      continue;
+    }
+    byAgent.set(d.agentAddress, {
+      agentAddress: d.agentAddress,
+      humanId: d.humanId,
+      domains: [d.name],
+    });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    agents: [...byAgent.values()],
+  });
 }

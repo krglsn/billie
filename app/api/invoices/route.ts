@@ -38,7 +38,7 @@ type PrepareInvoiceBody = {
 /**
  * Public: list invoices for an agent (in-memory store).
  *
- * GET /api/invoices?agent=0x…
+ * GET /api/invoices?agent=0x…&domain=alice.parent.eth
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -50,7 +50,29 @@ export async function GET(request: Request) {
     );
   }
 
-  const records = listInvoicesByAgent(agent);
+  const domainRaw = url.searchParams.get("domain")?.trim();
+  let domain: string | undefined;
+  if (domainRaw) {
+    try {
+      domain = normalizeDomainName(domainRaw);
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error: "Invalid query param: domain",
+          detail: error instanceof Error ? error.message : "Unknown error",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  let records = listInvoicesByAgent(agent);
+  if (domain) {
+    records = records.filter(
+      (inv) => inv.rootDomain.toLowerCase() === domain.toLowerCase(),
+    );
+  }
+
   const invoices = await Promise.all(
     records.map(async (inv) => {
       const ensStatus = inv.texts[INVOICE_TEXT_KEYS.status] ?? "open";
@@ -66,13 +88,19 @@ export async function GET(request: Request) {
         fullName: inv.fullName,
         agentAddress: inv.agentAddress,
         humanId: inv.humanId,
+        rootDomain: inv.rootDomain,
         paymentStatus: computePaymentStatus({ paidOnRouter, ensStatus }),
         registrationStatus: inv.status,
       };
     }),
   );
 
-  return NextResponse.json({ ok: true, agent: agent.toLowerCase(), invoices });
+  return NextResponse.json({
+    ok: true,
+    agent: agent.toLowerCase(),
+    domain: domain ?? null,
+    invoices,
+  });
 }
 
 /**

@@ -63,10 +63,13 @@ function InvoiceDetail() {
 
   const agent = data?.texts?.["billie.agent"] ?? null;
   const humanId = data?.texts?.["billie.humanId"] ?? null;
+  const fullName = data?.fullName ?? null;
+  const ensExplorerUrl = fullName
+    ? `https://explorer.ens.dev/${fullName}`
+    : null;
 
   const rows: [string, string | null | undefined][] = data
     ? [
-        ["Name", data.fullName],
         ["Invoice ID", data.invoiceId],
         ["Amount", data.amount],
         ["Currency", data.currency],
@@ -92,6 +95,24 @@ function InvoiceDetail() {
         <>
           <table className="data details">
             <tbody>
+              <tr>
+                <th>Name</th>
+                <td className="mono">
+                  {fullName ?? "—"}
+                  {ensExplorerUrl ? (
+                    <>
+                      {" "}
+                      <a
+                        href={ensExplorerUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        ENS ↗
+                      </a>
+                    </>
+                  ) : null}
+                </td>
+              </tr>
               {rows.map(([label, value]) => (
                 <tr key={label}>
                   <th>{label}</th>

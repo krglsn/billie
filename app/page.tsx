@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Spinner } from "@/app/components/Spinner";
 
 type Agent = {
   agentAddress: string;
   humanId: string;
-  domain: string;
+  domains: string[];
 };
 
 type InvoiceRow = {
@@ -20,10 +20,16 @@ type InvoiceRow = {
 export default function Home() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agent, setAgent] = useState("");
+  const [domain, setDomain] = useState("");
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const domains = useMemo(() => {
+    const selected = agents.find((a) => a.agentAddress === agent);
+    return selected?.domains ?? [];
+  }, [agents, agent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,31 +54,41 @@ export default function Home() {
     };
   }, []);
 
-  const loadInvoices = useCallback(async (agentAddress: string) => {
-    if (!agentAddress) {
-      setInvoices([]);
-      return;
-    }
-    setLoadingInvoices(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/invoices?agent=${encodeURIComponent(agentAddress)}`,
-      );
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Failed to load invoices");
-      setInvoices(body.invoices ?? []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load invoices");
-      setInvoices([]);
-    } finally {
-      setLoadingInvoices(false);
-    }
-  }, []);
+  useEffect(() => {
+    setDomain("");
+    setInvoices([]);
+  }, [agent]);
+
+  const loadInvoices = useCallback(
+    async (agentAddress: string, domainName: string) => {
+      if (!agentAddress || !domainName) {
+        setInvoices([]);
+        return;
+      }
+      setLoadingInvoices(true);
+      setError(null);
+      try {
+        const qs = new URLSearchParams({
+          agent: agentAddress,
+          domain: domainName,
+        });
+        const res = await fetch(`/api/invoices?${qs}`);
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error ?? "Failed to load invoices");
+        setInvoices(body.invoices ?? []);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load invoices");
+        setInvoices([]);
+      } finally {
+        setLoadingInvoices(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    void loadInvoices(agent);
-  }, [agent, loadInvoices]);
+    void loadInvoices(agent, domain);
+  }, [agent, domain, loadInvoices]);
 
   return (
     <main className="page">
@@ -94,22 +110,42 @@ export default function Home() {
             </option>
             {agents.map((a) => (
               <option key={a.agentAddress} value={a.agentAddress}>
-                {a.domain} — {a.agentAddress.slice(0, 8)}…
+                {a.agentAddress.slice(0, 10)}… — {a.humanId.slice(0, 10)}…
               </option>
             ))}
           </select>
         )}
       </label>
 
+      {agent ? (
+        <label className="field">
+          <span>Domain</span>
+          <select
+            value={domain}
+            onChange={(e) => setDomain(e.target.value)}
+            disabled={domains.length === 0}
+          >
+            <option value="">
+              {domains.length === 0 ? "No domains" : "Select domain…"}
+            </option>
+            {domains.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
       {error ? <p className="error">{error}</p> : null}
 
-      {agent ? (
+      {agent && domain ? (
         <section>
           <h2>Invoices</h2>
           {loadingInvoices ? (
             <Spinner label="Loading invoices…" />
           ) : invoices.length === 0 ? (
-            <p className="muted">No invoices for this agent.</p>
+            <p className="muted">No invoices for this domain.</p>
           ) : (
             <table className="data">
               <thead>
