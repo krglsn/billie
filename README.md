@@ -105,8 +105,10 @@ npx @worldcoin/agentkit-cli status 0xYourAddress
 
 ### 5. Authorized identity probe
 
+Put the key in `.env` (see `.env.example`), then:
+
 ```bash
-AGENT_PRIVATE_KEY=0x... pnpm agent:me
+pnpm agent:me
 # → 200 + humanId
 ```
 
@@ -116,10 +118,10 @@ AGENT_PRIVATE_KEY=0x... pnpm agent:me
 2. Link it:
 
 ```bash
-AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- myagent
+pnpm agent:domain -- myagent
 # → 200 + mapping { humanId, agentAddress, domain }
 
-AGENT_PRIVATE_KEY=0x... pnpm agent:domain -- myagent
+pnpm agent:domain -- myagent
 # → 409 already registered on Billie
 ```
 
