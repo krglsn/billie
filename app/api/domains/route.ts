@@ -1,34 +1,47 @@
 import { NextResponse } from "next/server";
+import type { Address } from "viem";
 import {
   isNextResponse,
   requireHumanBackedAgent,
 } from "@/lib/agentkit";
+import { getBillieParentName } from "@/lib/billie-parent";
 import {
   getLinkedDomainByAgent,
   isDomainLinked,
   linkDomain,
-  normalizeDomainName,
+  resolveNamespaceClaim,
 } from "@/lib/domains";
-import { verifyAgentOwnsDomain } from "@/lib/ens";
+import { provisionAgentNamespace } from "@/lib/provision-agent-namespace";
 
 type ClaimDomainBody = {
   name?: unknown;
 };
 
 /**
- * Claim / link an already-registered ENSv2 root domain on Ethereum Sepolia.
+ * Provision + claim an agent namespace under BILLIE_PARENT_NAME.
  *
- * Body: { "name": "billie.eth" }
+ * Body: { "name": "alice" } or { "name": "alice.parent.eth" }
  *
- * Checks:
- * - AgentKit human-backed identity (402 / 401 / 403)
- * - Domain not already linked in Billie (409)
- * - On-chain ENSv2 ETHRegistry owner matches the agent address (404 / 403 / 502)
+ * Flow:
+ * - AgentKit human-backed identity
+ * - Billie deploys agent UserRegistry, registers `{label}.{parent}.eth`
+ * - Stores humanId → agentAddress → namespace (+ subregistry for invoices)
  */
 export async function POST(request: Request) {
   const agent = await requireHumanBackedAgent(request);
   if (isNextResponse(agent)) {
     return agent;
+  }
+
+  const parentName = getBillieParentName();
+  if (!parentName) {
+    return NextResponse.json(
+      {
+        error: "Billie parent name is not configured",
+        detail: "Set BILLIE_PARENT_NAME",
+      },
+      { status: 503 },
+    );
   }
 
   let body: ClaimDomainBody;
@@ -45,14 +58,16 @@ export async function POST(request: Request) {
     );
   }
 
+  let label: string;
   let name: string;
   try {
-    name = normalizeDomainName(body.name);
+    ({ label, name } = resolveNamespaceClaim(body.name, parentName));
   } catch (error) {
     return NextResponse.json(
       {
-        error: "Invalid domain name",
+        error: "Invalid namespace name",
         detail: error instanceof Error ? error.message : "Unknown error",
+        parentName,
       },
       { status: 400 },
     );
@@ -61,7 +76,7 @@ export async function POST(request: Request) {
   if (isDomainLinked(name)) {
     return NextResponse.json(
       {
-        error: "Domain is already registered on Billie",
+        error: "Namespace is already registered on Billie",
         name,
       },
       { status: 409 },
@@ -72,7 +87,7 @@ export async function POST(request: Request) {
   if (existingForAgent) {
     return NextResponse.json(
       {
-        error: "Agent already has a linked domain on Billie",
+        error: "Agent already has a linked namespace on Billie",
         domain: existingForAgent.name,
         agentAddress: agent.address,
       },
@@ -80,52 +95,40 @@ export async function POST(request: Request) {
     );
   }
 
-  const ownership = await verifyAgentOwnsDomain(name, agent.address);
-  if (!ownership.ok) {
-    if (ownership.reason === "not_registered") {
-      return NextResponse.json(
-        {
-          error: "Domain is not registered on Ethereum Sepolia ENSv2",
-          name,
-          chainId: "eip155:11155111",
-          protocol: "ensv2",
-        },
-        { status: 404 },
-      );
-    }
-    if (ownership.reason === "owner_mismatch") {
-      return NextResponse.json(
-        {
-          error: "Domain owner does not match agent address",
-          name,
-          agentAddress: agent.address,
-          ensOwner: ownership.owner,
-          chainId: "eip155:11155111",
-          protocol: "ensv2",
-        },
-        { status: 403 },
-      );
-    }
+  const provisioned = await provisionAgentNamespace({
+    label,
+    agentAddress: agent.address as Address,
+  });
+
+  if (!provisioned.ok) {
+    const { code, message, detail } = provisioned.error;
+    const status =
+      code === "parent_not_ready"
+        ? 503
+        : code === "label_taken"
+          ? 409
+          : code === "billie_key_missing"
+            ? 503
+            : 502;
     return NextResponse.json(
-      {
-        error: "Failed to verify ENSv2 ownership on Sepolia",
-        name,
-        detail: ownership.detail,
-        protocol: "ensv2",
-      },
-      { status: 502 },
+      { error: message, code, detail, name, parentName },
+      { status },
     );
   }
 
+  const ns = provisioned.namespace;
   const linked = linkDomain({
-    name,
+    name: ns.name,
+    label: ns.label,
+    parentName: ns.parentName,
     agentAddress: agent.address,
     humanId: agent.humanId,
-    chainId: ownership.chainId,
-    ensOwner: ownership.owner,
-    protocol: ownership.protocol,
-    tokenId: ownership.tokenId,
-    resolver: ownership.resolver,
+    chainId: "eip155:11155111",
+    ensOwner: ns.agentAddress,
+    protocol: "ensv2",
+    tokenId: ns.tokenId,
+    resolver: ns.resolver,
+    subregistry: ns.subregistry,
   });
 
   return NextResponse.json({
@@ -135,11 +138,16 @@ export async function POST(request: Request) {
       agentAddress: linked.agentAddress,
       domain: linked.name,
     },
+    name: linked.name,
+    label: linked.label,
+    parentName: linked.parentName,
+    subregistry: linked.subregistry,
     chainId: linked.chainId,
     protocol: linked.protocol,
     ensOwner: linked.ensOwner,
     tokenId: linked.tokenId,
     resolver: linked.resolver,
     linkedAt: linked.linkedAt,
+    txs: ns.txs,
   });
 }

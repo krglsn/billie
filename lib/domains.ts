@@ -1,5 +1,10 @@
 export type LinkedDomain = {
+  /** Full ENS name, e.g. `alice.agentinvoice.eth`. */
   name: string;
+  /** Single label under the Billie parent, e.g. `alice`. */
+  label: string;
+  /** Parent 2LD, e.g. `agentinvoice.eth`. */
+  parentName: string;
   agentAddress: string;
   humanId: string;
   chainId: "eip155:11155111";
@@ -7,6 +12,8 @@ export type LinkedDomain = {
   protocol: "ensv2";
   tokenId: string;
   resolver: string;
+  /** Agent UserRegistry — invoices register here. */
+  subregistry: string;
   linkedAt: string;
 };
 
@@ -16,7 +23,7 @@ export type LinkedDomain = {
  *
  * Plus indexes for uniqueness / invoice lookups:
  *   - by domain name (global uniqueness)
- *   - by agent address (one linked root domain per agent)
+ *   - by agent address (one linked namespace per agent)
  */
 const byHumanId = new Map<string, Map<string, LinkedDomain>>();
 const byName = new Map<string, LinkedDomain>();
@@ -26,7 +33,66 @@ function normalizeAddress(address: string): string {
   return address.toLowerCase();
 }
 
-/** Normalize to lowercase; ensure a single trailing `.eth`. */
+const LABEL_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
+
+/** Validate a single DNS label (3–63 chars). */
+export function normalizeNamespaceLabel(input: string): string {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    throw new Error("Namespace label is required");
+  }
+  if (!LABEL_RE.test(trimmed)) {
+    throw new Error(
+      "Invalid label: use lowercase letters, numbers, and hyphens",
+    );
+  }
+  if (trimmed.length < 3 || trimmed.length > 63) {
+    throw new Error("Label must be between 3 and 63 characters");
+  }
+  return trimmed;
+}
+
+/**
+ * Parse claim body into a namespace label under `parentName`.
+ * Accepts `alice`, `alice.parent.eth`, or (legacy) `alice.eth` → label only when parent matches.
+ */
+export function resolveNamespaceClaim(
+  input: string,
+  parentName: string,
+): { label: string; name: string } {
+  const parent = parentName.trim().toLowerCase();
+  if (!parent.endsWith(".eth")) {
+    throw new Error("Invalid parent name");
+  }
+  const parentLabel = parent.slice(0, -4);
+
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) {
+    throw new Error("Namespace name is required");
+  }
+
+  let label: string;
+  if (!trimmed.includes(".")) {
+    label = normalizeNamespaceLabel(trimmed);
+  } else if (trimmed.endsWith(`.${parent}`)) {
+    label = normalizeNamespaceLabel(trimmed.slice(0, -(parent.length + 1)));
+  } else if (trimmed.endsWith(".eth") && !trimmed.slice(0, -4).includes(".")) {
+    // Legacy `foo.eth` body — treat as label `foo` under Billie parent.
+    label = normalizeNamespaceLabel(trimmed.slice(0, -4));
+  } else {
+    throw new Error(
+      `Name must be a label or end with .${parent} (e.g. alice or alice.${parent})`,
+    );
+  }
+
+  if (label === parentLabel) {
+    throw new Error("Namespace label cannot equal the parent label");
+  }
+
+  return { label, name: `${label}.${parent}` };
+}
+
+/** @deprecated Prefer resolveNamespaceClaim for parent namespaces. */
 export function normalizeDomainName(input: string): string {
   const trimmed = input.trim().toLowerCase();
   if (!trimmed) {
@@ -37,17 +103,18 @@ export function normalizeDomainName(input: string): string {
     ? trimmed.slice(0, -4)
     : trimmed;
 
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(withoutEth)) {
-    throw new Error(
-      "Invalid domain label: use lowercase letters, numbers, and hyphens",
-    );
+  if (withoutEth.includes(".")) {
+    // Allow already-full `label.parent.eth` through for lookups.
+    const parts = withoutEth.split(".");
+    if (parts.length !== 2) {
+      throw new Error("Invalid domain name");
+    }
+    normalizeNamespaceLabel(parts[0]!);
+    normalizeNamespaceLabel(parts[1]!);
+    return `${parts[0]}.${parts[1]}.eth`;
   }
 
-  if (withoutEth.length < 3 || withoutEth.length > 63) {
-    throw new Error("Domain label must be between 3 and 63 characters");
-  }
-
-  return `${withoutEth}.eth`;
+  return `${normalizeNamespaceLabel(withoutEth)}.eth`;
 }
 
 export function getLinkedDomain(name: string): LinkedDomain | undefined {
