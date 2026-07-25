@@ -50,6 +50,13 @@ const ensV2RegistryAbi = [
     inputs: [{ name: "label", type: "string" }],
     outputs: [{ type: "address" }],
   },
+  {
+    type: "function",
+    name: "getSubregistry",
+    stateMutability: "view",
+    inputs: [{ name: "label", type: "string" }],
+    outputs: [{ type: "address" }],
+  },
 ] as const;
 
 export type EnsOwnershipResult =
@@ -78,9 +85,27 @@ function getSepoliaClient() {
   });
 }
 
-function getEthRegistryAddress(): `0x${string}` {
+export function getEthRegistryAddress(): `0x${string}` {
   return (process.env.ETHEREUM_SEPOLIA_ENS_V2_REGISTRY ??
     ENS_V2_ETH_REGISTRY_SEPOLIA) as `0x${string}`;
+}
+
+export function createSepoliaPublicClient() {
+  return getSepoliaClient();
+}
+
+/** ENSv2 subregistry for a 2LD label, if configured. */
+export async function getEthSubregistry(
+  rootLabel: string,
+): Promise<Address | null> {
+  const client = getSepoliaClient();
+  const subregistry = await client.readContract({
+    address: getEthRegistryAddress(),
+    abi: ensV2RegistryAbi,
+    functionName: "getSubregistry",
+    args: [rootLabel],
+  });
+  return subregistry === zeroAddress ? null : subregistry;
 }
 
 /** Extract the 2LD label from a normalized `foo.eth` name. */

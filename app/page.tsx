@@ -11,7 +11,13 @@ export default function Home() {
           <code>GET /api/me</code> — AgentKit-protected identity probe
         </li>
         <li>
-          <code>POST /api/domains</code> — claim/link Sepolia ENS ownership
+          <code>POST /api/domains</code> — claim/link Sepolia ENSv2 ownership
+        </li>
+        <li>
+          <code>POST /api/invoices</code> — prepare invoice subdomain tx
+        </li>
+        <li>
+          <code>POST /api/invoices/submit</code> — broadcast signed invoice tx
         </li>
       </ul>
     </main>

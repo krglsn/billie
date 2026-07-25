@@ -33,7 +33,8 @@ Deferred pieces stay in the picture; only the API slice ships now.
 | Endpoint | Purpose | Stage 1 behavior |
 |----------|---------|------------------|
 | `POST /api/domains` | Claim root ENS on Ethereum Sepolia ENSv2 | AgentKit; reject if name or agent already linked; verify on-chain owner == agent; store `humanId → agentAddress → domain` |
-| `POST /api/invoices` | Invoice subdomain under linked root (same Sepolia ENSv2) | Validate AgentKit; require linked domain via agent lookup; stub / later on-chain |
+| `POST /api/invoices` | Prepare invoice subdomain under linked root (Sepolia ENSv2) | AgentKit; require linked domain; stub attestation + register calldata (no text records) |
+| `POST /api/invoices/submit` | Broadcast signed invoice tx | Verify signed tx matches prepare; `sendRawTransaction`; wait briefly for confirmation |
 
 Both return clear JSON success/error. Unauthenticated or non–human-backed requests get the AgentKit/x402 challenge (402) and fail verify without a registered AgentBook wallet.
 
@@ -53,7 +54,7 @@ Full checklist: [README.md](./README.md#stage-1-verification-checklist).
 1. ~~Scaffold local API (Next.js API routes) with AgentKit human-backed verification~~
 2. ~~Add `POST /api/domains` claim/link behind AgentKit auth~~ (`/api/invoices` still pending)
 3. ~~Document + verify local flow — register agent via AgentKit CLI, call `/api/me` and `/api/domains`~~
-4. Add `POST /api/invoices` stub behind AgentKit auth (Ethereum Sepolia ENSv2)
+4. ~~Add `POST /api/invoices` prepare + submit behind AgentKit auth (Ethereum Sepolia ENSv2)~~
 
 ## Out of scope (this stage)
 
