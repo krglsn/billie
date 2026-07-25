@@ -100,15 +100,14 @@ export default function Home() {
         <span>Agent</span>
         {loadingAgents ? (
           <Spinner label="Loading agents…" />
+        ) : agents.length === 0 ? (
+          <p className="muted">No agents found in database.</p>
         ) : (
           <select
             value={agent}
             onChange={(e) => setAgent(e.target.value)}
-            disabled={agents.length === 0}
           >
-            <option value="">
-              {agents.length === 0 ? "No linked agents" : "Select agent…"}
-            </option>
+            <option value="">Select agent…</option>
             {agents.map((a) => (
               <option key={a.agentAddress} value={a.agentAddress}>
                 {a.agentAddress.slice(0, 10)}… — {a.humanId.slice(0, 10)}…
