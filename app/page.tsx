@@ -1,7 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  Suspense,
+} from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Spinner } from "@/app/components/Spinner";
 
 type Agent = {
@@ -51,10 +59,18 @@ function middleEllipsis(value: string, head = 6, tail = 4): string {
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
-export default function Home() {
+function Dashboard() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [agent, setAgent] = useState("");
-  const [domain, setDomain] = useState("");
+  const [agent, setAgent] = useState(
+    () => searchParams.get("agent")?.toLowerCase() ?? "",
+  );
+  const [domain, setDomain] = useState(
+    () => searchParams.get("domain")?.toLowerCase() ?? "",
+  );
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loadingDomains, setLoadingDomains] = useState(false);
@@ -70,6 +86,27 @@ export default function Home() {
     const selected = agents.find((a) => a.agentAddress === agent);
     return selected?.domains ?? [];
   }, [agents, agent]);
+
+  // Keep selection in the URL so ← Dashboard can restore it.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (agent) params.set("agent", agent);
+    if (domain) params.set("domain", domain);
+    const qs = params.toString();
+    const next = qs ? `${pathname}?${qs}` : pathname;
+    const current = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    if (next !== current) {
+      router.replace(next, { scroll: false });
+    }
+  }, [agent, domain, pathname, router, searchParams]);
+
+  // Restore from URL (e.g. browser back / Dashboard link).
+  useEffect(() => {
+    const a = searchParams.get("agent")?.toLowerCase() ?? "";
+    const d = searchParams.get("domain")?.toLowerCase() ?? "";
+    if (a !== agentRef.current) setAgent(a);
+    if (d !== domainRef.current) setDomain(d);
+  }, [searchParams]);
 
   const loadInvoices = useCallback(
     async (agentAddress: string, domainName: string) => {
@@ -222,7 +259,7 @@ export default function Home() {
                   className="min-w-0 flex-1 rounded-lg border border-line bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20"
                   value={agent}
                   onChange={(e) => {
-                    setAgent(e.target.value);
+                    setAgent(e.target.value.toLowerCase());
                     setDomain("");
                   }}
                 >
@@ -256,7 +293,7 @@ export default function Home() {
                 <select
                   className="min-w-0 flex-1 rounded-lg border border-line bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/20 disabled:bg-slate-50 disabled:text-muted"
                   value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
+                  onChange={(e) => setDomain(e.target.value.toLowerCase())}
                   disabled={domains.length === 0 || loadingDomains}
                 >
                   <option value="">
@@ -294,10 +331,7 @@ export default function Home() {
             <h2 className="text-lg font-semibold tracking-tight">
               Invoices from {domain}
             </h2>
-            <p
-              className="font-mono text-xs text-muted"
-              title={agent}
-            >
+            <p className="font-mono text-xs text-muted" title={agent}>
               {middleEllipsis(agent, 8, 6)}
             </p>
           </div>
@@ -324,43 +358,50 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line">
-                    {invoices.map((inv) => (
-                      <tr
-                        key={inv.fullName}
-                        className="transition hover:bg-slate-50/60"
-                      >
-                        <td
-                          className="max-w-[14rem] truncate px-4 py-3 font-mono text-xs sm:max-w-[18rem] sm:text-sm"
-                          title={inv.fullName}
+                    {invoices.map((inv) => {
+                      const payQs = new URLSearchParams({
+                        name: inv.fullName,
+                        agent,
+                        domain,
+                      });
+                      return (
+                        <tr
+                          key={inv.fullName}
+                          className="transition hover:bg-slate-50/60"
                         >
-                          {inv.fullName}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 font-medium">
-                          {inv.amountLabel ?? "—"}
-                        </td>
-                        <td
-                          className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted"
-                          title={inv.humanId}
-                        >
-                          {middleEllipsis(inv.humanId, 8, 6)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClass(inv.paymentStatus)}`}
+                          <td
+                            className="max-w-[14rem] truncate px-4 py-3 font-mono text-xs sm:max-w-[18rem] sm:text-sm"
+                            title={inv.fullName}
                           >
-                            {inv.paymentStatus}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Link
-                            href={`/invoice?name=${encodeURIComponent(inv.fullName)}`}
-                            className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover"
+                            {inv.fullName}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3 font-medium">
+                            {inv.amountLabel ?? "—"}
+                          </td>
+                          <td
+                            className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted"
+                            title={inv.humanId}
                           >
-                            Pay
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
+                            {middleEllipsis(inv.humanId, 8, 6)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${statusClass(inv.paymentStatus)}`}
+                            >
+                              {inv.paymentStatus}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link
+                              href={`/invoice?${payQs}`}
+                              className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover"
+                            >
+                              Pay
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -369,5 +410,19 @@ export default function Home() {
         </section>
       ) : null}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-5xl px-4 py-10">
+          <Spinner label="Loading…" />
+        </main>
+      }
+    >
+      <Dashboard />
+    </Suspense>
   );
 }
