@@ -7,23 +7,22 @@
  *   BILLIE_INVOICE_RESOLVER=0x...
  */
 import {
-  createPublicClient,
-  createWalletClient,
   encodeFunctionData,
-  http,
   keccak256,
   parseEventLogs,
   stringToHex,
   type Address,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { sepolia } from "viem/chains";
 import {
   getBillieInvoiceResolverAddress,
   getPermissionedResolverImplAddress,
   getVerifiableFactoryAddress,
 } from "@/lib/ens";
-import { verifiableFactoryAbi } from "@/lib/ens-registry-write";
+import {
+  createBillieSepoliaClients,
+  verifiableFactoryAbi,
+  writeContractBuffered,
+} from "@/lib/ens-registry-write";
 import { BILLIE_INVOICE_RESOLVER_ROLES } from "@/lib/ens-roles";
 
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -49,13 +48,8 @@ async function main() {
     process.exit(0);
   }
 
-  const key = process.env.BILLIE_PRIVATE_KEY as `0x${string}` | undefined;
-  if (!key) {
-    console.error("Set BILLIE_PRIVATE_KEY in .env");
-    process.exit(1);
-  }
-
-  const account = privateKeyToAccount(key);
+  const clients = createBillieSepoliaClients();
+  const { account, publicClient } = clients;
   const factory = getVerifiableFactoryAddress();
   const impl = getPermissionedResolverImplAddress();
   const saltKey = `billie:invoice-resolver:v1:${account.address.toLowerCase()}`;
@@ -78,18 +72,8 @@ async function main() {
     process.exit(0);
   }
 
-  const rpc = process.env.ETHEREUM_SEPOLIA_RPC_URL;
-  const publicClient = createPublicClient({
-    chain: sepolia,
-    transport: http(rpc),
-  });
-  const wallet = createWalletClient({
-    account,
-    chain: sepolia,
-    transport: http(rpc),
-  });
-
-  const deployHash = await wallet.writeContract({
+  // Public RPCs under-estimate deployProxy+initialize (~178k) → OOG; buffer like parent registry.
+  const deployHash = await writeContractBuffered(clients, {
     address: factory,
     abi: verifiableFactoryAbi,
     functionName: "deployProxy",
@@ -100,7 +84,9 @@ async function main() {
     hash: deployHash,
   });
   if (receipt.status !== "success") {
-    console.error("deployProxy reverted");
+    console.error(
+      `deployProxy reverted (gasUsed=${receipt.gasUsed}). Check https://sepolia.etherscan.io/tx/${deployHash}`,
+    );
     process.exit(1);
   }
 
