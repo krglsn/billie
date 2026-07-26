@@ -1,25 +1,26 @@
 /**
- * Local SQLite persistence for Billie internal state (domains + invoices).
+ * Billie internal state (domains + invoices).
+ * Unset/empty BILLIE_DB_PATH → in-memory SQLite (no files; lost on process restart).
+ * Set BILLIE_DB_PATH → SQLite file at that path.
  */
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-
-const DEFAULT_DB_PATH = path.join(process.cwd(), "data", "billie.sqlite");
 
 declare global {
   // eslint-disable-next-line no-var
   var __billieDb: Database.Database | undefined;
 }
 
+const MEMORY_PATH = ":memory:";
+
 function resolveDbPath(): string {
   const fromEnv = process.env.BILLIE_DB_PATH?.trim();
-  if (fromEnv) {
-    return path.isAbsolute(fromEnv)
-      ? fromEnv
-      : path.join(process.cwd(), fromEnv);
-  }
-  return DEFAULT_DB_PATH;
+  if (!fromEnv) return MEMORY_PATH;
+  if (fromEnv === MEMORY_PATH) return MEMORY_PATH;
+  return path.isAbsolute(fromEnv)
+    ? fromEnv
+    : path.join(process.cwd(), fromEnv);
 }
 
 function migrate(db: Database.Database): void {
@@ -80,10 +81,17 @@ export function getDb(): Database.Database {
   }
 
   const dbPath = resolveDbPath();
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const inMemory = dbPath === MEMORY_PATH;
+  if (!inMemory) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
 
   const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  if (inMemory) {
+    db.pragma("journal_mode = MEMORY");
+  } else {
+    db.pragma("journal_mode = WAL");
+  }
   db.pragma("foreign_keys = ON");
   migrate(db);
 
