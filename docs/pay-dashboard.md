@@ -16,7 +16,7 @@ Laconic payer UI on top of existing invoice + PaymentRouter APIs.
 
 Detail page reuses `GET /api/invoices/resolve?name=`.
 
-Linked domains and invoices persist in SQLite (`data/billie.sqlite`, override with `BILLIE_DB_PATH`).
+Linked domains and invoices use SQLite: unset/`BILLIE_DB_PATH` empty → in-memory; set a path (e.g. `data/billie.sqlite`) for a file.
 
 ## UI
 

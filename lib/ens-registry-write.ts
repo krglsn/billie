@@ -104,8 +104,8 @@ export const userRegistryWriteAbi = [
   },
 ] as const;
 
-/** Floor + 2× estimate — flaky public RPCs sometimes under-estimate and OOG. */
-const MIN_WRITE_GAS = BigInt(200_000);
+/** Floor + 2× estimate — flaky public RPCs under-estimate deployProxy+initialize (~178k → OOG). */
+const MIN_WRITE_GAS = BigInt(500_000);
 
 export async function writeContractBuffered(
   clients: BillieSepoliaClients,
